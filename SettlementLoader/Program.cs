@@ -20,7 +20,7 @@ namespace SettlementLoader
             string sSQL;
 
             // open the database connection
-            using (var connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+            using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
             {
                 connection.Open();
 
@@ -37,7 +37,7 @@ namespace SettlementLoader
                 sSQL += "update_date = getdate(), update_user = user_name()" + Environment.NewLine;
                 sSQL += "WHERE file_transfer_task_id = " + fileTransferTaskID.ToString();
 
-                using (var cmd = new SqlCommand(sSQL, connection))
+                using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                 {
                     cmd.CommandType = System.Data.CommandType.Text;
                     int result = cmd.ExecuteNonQuery();
@@ -128,11 +128,11 @@ namespace SettlementLoader
         {
             try
             {
-                using (var connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
 
-                    using (var cmd = new SqlCommand("[ESG].[Trace].[sp_Session]", connection))
+                    using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Session]", connection))
                     {
                         cmd.CommandType = System.Data.CommandType.StoredProcedure;
                         cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
@@ -153,11 +153,11 @@ namespace SettlementLoader
         {
             try
             {
-                using (var connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
 
-                    using (var cmd = new SqlCommand("[ESG].[Trace].[sp_Error_PUT]", connection))
+                    using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Error_PUT]", connection))
                     {
                         cmd.CommandType = System.Data.CommandType.StoredProcedure;
                         cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
@@ -176,6 +176,16 @@ namespace SettlementLoader
             catch (Exception ex)
             {
                 Console.WriteLine("Error attempting to call sp_Error_PUT:" + ex.Message + ", logging exception:" + exception.Message);
+            }
+        }
+        public static string IsEmptyWithQuotes(string inString)
+        {
+            if (inString == "")
+            {
+                return "NULL";
+            }
+            {
+                return "'" + inString + "'";
             }
         }
     }

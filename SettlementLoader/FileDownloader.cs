@@ -51,34 +51,30 @@ namespace SettlementLoader
             // Open database connection
             try
             {
-                using (var connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
+                    DateTime startTime = DateTime.Now;
 
                     // Create file_transfer_task queue records
-                    using (var cmd = new SqlCommand("etl.sp_prepare_file_transfer_tasks", connection))
+                    using (SqlCommand cmd = new SqlCommand("etl.sp_prepare_file_transfer_tasks", connection))
                     {
-                        DateTime startTime = DateTime.Now;
-
                         cmd.CommandType = System.Data.CommandType.StoredProcedure;
                         int result = cmd.ExecuteNonQuery();
                         Console.WriteLine("sp_prepare_file_transfer_tasks created " + result + " queue records.");
                         Program.LogSession(Properties.Settings.Default.TaskName + ":ProcessDownloads", "sp_prepare_file_transfer_tasks created " + result + " queue records.", startTime);
                     }
 
+                    startTime = DateTime.Now;
+
                     // Process download queue records
-                    using (SqlCommand cmd = new SqlCommand())
+                    sSQL = "SELECT file_transfer_task.file_transfer_task_id, file_transfer_source.source_name, file_transfer_task.source_address, file_transfer_task.destination_address" + Environment.NewLine;
+                    sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+                    sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOAD_QUEUED', 'FTTD_RETRY')" + Environment.NewLine;
+                    sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
+
+                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
-                        DateTime startTime = DateTime.Now;
-
-                        sSQL = "SELECT file_transfer_task.file_transfer_task_id, file_transfer_source.source_name, file_transfer_task.source_address, file_transfer_task.destination_address" + Environment.NewLine;
-                        sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
-                        sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOAD_QUEUED', 'FTTD_RETRY')" + Environment.NewLine;
-                        sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
-
-                        cmd.Connection = connection;
-                        cmd.CommandText = sSQL;
-
                         using (SqlDataReader dr = cmd.ExecuteReader())
                         {
                             while (dr.Read())

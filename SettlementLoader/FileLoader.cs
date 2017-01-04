@@ -42,12 +42,12 @@ namespace SettlementLoader
                                 if (dr["transfer_method_cd"].ToString() == "TM_MSRS_HTTP")
                                 {
                                     FileLoader fileloader = new FileLoader();
-                                    result = fileloader.LoadFileReport(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString(), dr["source_name"].ToString());
+                                    result = fileloader.LoadFileMSRSReport(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString(), dr["source_name"].ToString());
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_MSRS_BILL_HTTP")
                                 {
                                     FileLoader fileloader = new FileLoader();
-                                    result = fileloader.LoadFileBill(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                    result = fileloader.LoadFileMSRSBill(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_INSCHEDULES")
                                 {
@@ -75,7 +75,7 @@ namespace SettlementLoader
                 Program.LogError(Properties.Settings.Default.TaskName + ":ProcessFiles", sSQL, ex);
             }
         }
-        private bool LoadFileReport(long fileTransferTaskID, string pathName, string sourceName)
+        private bool LoadFileMSRSReport(long fileTransferTaskID, string pathName, string sourceName)
         {
             string sSQL = "";
 
@@ -175,7 +175,7 @@ namespace SettlementLoader
             valuesSQL += ")" + Environment.NewLine;
             return valuesSQL;
         }
-        private bool LoadFileBill(long fileTransferTaskID, string pathName)
+        private bool LoadFileMSRSBill(long fileTransferTaskID, string pathName)
         {
             string sSQL = "";
 

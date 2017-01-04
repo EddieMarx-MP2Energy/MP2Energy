@@ -2,8 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Data.SqlClient;
+using System.IO;
+using System.IO.Compression;
 
 namespace SettlementLoader
 {
@@ -11,7 +12,10 @@ namespace SettlementLoader
     {
         static void Main(string[] args)
         {
+            DownloadManager.CreateTransferTasksMSRS();
+            DownloadManager.CreateTransferTasksERCOT();
             DownloadManager.ProcessDownloads();
+            Program.ProcessZipFiles();
             FileLoader.ProcessFiles();
         }
 
@@ -138,7 +142,7 @@ namespace SettlementLoader
                         cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
                         cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
                         cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pStart",startTime));
+                        cmd.Parameters.Add(new SqlParameter("pStart", startTime));
                         cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));
                         cmd.ExecuteNonQuery();
                     }
@@ -188,5 +192,97 @@ namespace SettlementLoader
                 return "'" + inString + "'";
             }
         }
+        public static List<FileList> UnzipFile(string zipPath, string extractPath, string sourceName, long fileTransferTaskID)
+        {
+            List<FileList> fileList = new List<FileList>();
+
+            using (ZipArchive archive = ZipFile.OpenRead(zipPath))
+            {
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    entry.ExtractToFile(Path.Combine(extractPath, entry.FullName));
+                    File.Move(Path.Combine(extractPath, entry.FullName), Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
+
+                    FileList i = new FileList();
+                    i.origFileName = entry.FullName;
+                    i.filePath = extractPath;
+                    i.fileName = sourceName + "_" + fileTransferTaskID + "_" + entry.FullName;
+                    i.fileSize = new System.IO.FileInfo(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)).Length;
+                    fileList.Add(i);
+                }
+            }
+            return fileList;
+        }
+        public struct FileList
+        {
+            public string filePath;
+            public string fileName;
+            public long fileSize;
+            public string origFileName;
+
+            public override string ToString()
+            {
+                return filePath + fileName;
+            }
+        }
+        public static void ProcessZipFiles()
+        {
+            string sSQL = "";
+            DateTime startTime = DateTime.Now;
+            List<Program.FileList> files = new List<Program.FileList>();
+
+
+            // Open database connection
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    // Get files ready to be unzipped
+                    sSQL = "SELECT file_transfer_task_id, file_transfer_task.file_transfer_source_id, file_transfer_source.source_name, file_transfer_task.source_address," + Environment.NewLine;
+                    sSQL += "file_transfer_task.destination_address, source_certificate_path, source_password, destination_directory, destination_filename" + Environment.NewLine;
+                    sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+                    sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED_ZIP')" + Environment.NewLine;
+                    sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
+                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                    {
+                        using (SqlDataReader dr = cmd.ExecuteReader())
+                        {
+                            while (dr.Read())
+                            {
+
+                                files = Program.UnzipFile(dr["destination_address"].ToString() + dr["destination_filename"].ToString(), dr["destination_directory"].ToString(), dr["source_name"].ToString(), Convert.ToInt64(dr["file_transfer_task_id"]));
+                                //SqlTransaction tran = connection.BeginTransaction();
+
+                                foreach (Program.FileList i in files)
+                                {
+                                    sSQL = "INSERT INTO etl.file_transfer_task" + Environment.NewLine;
+                                    sSQL += "(file_transfer_source_id, download_status_cd, source_address, source_filename, destination_address, destination_filename," + Environment.NewLine;
+                                    sSQL += "file_size_bytes, machine_name, start_date, stop_date)" + Environment.NewLine;
+                                    sSQL += "VALUES (" + dr["file_transfer_source_id"].ToString() + "," + Environment.NewLine;
+                                    sSQL += "'FTTD_DOWNLOADED', " + Program.IsEmptyWithQuotes(dr["source_address"].ToString()) + "," + Environment.NewLine;
+                                    sSQL += Program.IsEmptyWithQuotes(i.origFileName) + "," + Program.IsEmptyWithQuotes(i.filePath) + "," + Environment.NewLine;
+                                    sSQL += Program.IsEmptyWithQuotes(i.fileName) + "," + i.fileSize + ", '" + Environment.MachineName + "', getdate(), getdate())" + Environment.NewLine;
+                                    using (SqlCommand cmdInsert = new SqlCommand(sSQL, connection))
+                                    {
+                                        long result = Convert.ToInt64(cmdInsert.ExecuteScalar());
+                                    }
+                                }
+                                //tran.Commit();
+                                Program.UpdateTaskStatus(Convert.ToInt64(dr["file_transfer_task_id"]), downloadStatusCode: "FTTD_DOWNLOADED");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":UnzipFile", " ", ex);
+            }
+        }
     }
 }
+
+       

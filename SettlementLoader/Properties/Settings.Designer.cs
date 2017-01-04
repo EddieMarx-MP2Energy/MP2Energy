@@ -25,18 +25,6 @@ namespace SettlementLoader.Properties {
         
         [global::System.Configuration.ApplicationScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.ConnectionString)]
-        [global::System.Configuration.DefaultSettingValueAttribute("Data Source=Mp2-AppSrv;Initial Catalog=Settlement;Persist Security Info=True;User" +
-            " ID=pid_Settlement;Password=fnig56^#;Connection Timeout=30;\nConnection Lifetime=" +
-            "0;Min Pool Size=0;Max Pool Size=100;Pooling=true;")]
-        public string DatabaseConnectionString {
-            get {
-                return ((string)(this["DatabaseConnectionString"]));
-            }
-        }
-        
-        [global::System.Configuration.ApplicationScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("10")]
         public int ApplicationID {
             get {
@@ -50,6 +38,27 @@ namespace SettlementLoader.Properties {
         public string TaskName {
             get {
                 return ((string)(this["TaskName"]));
+            }
+        }
+        
+        [global::System.Configuration.ApplicationScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("https://mis.ercot.com:443")]
+        public string BaseURLErcot {
+            get {
+                return ((string)(this["BaseURLErcot"]));
+            }
+        }
+        
+        [global::System.Configuration.ApplicationScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.ConnectionString)]
+        [global::System.Configuration.DefaultSettingValueAttribute("Data Source=Mp2-AppSrv;Initial Catalog=Settlement;Persist Security Info=True;User" +
+            " ID=pid_Settlement;Password=fnig56^#;Connection Timeout=30;\nConnection Lifetime=" +
+            "0;Min Pool Size=0;Max Pool Size=100;Pooling=true;MultipleActiveResultSets=true;")]
+        public string DatabaseConnectionString {
+            get {
+                return ((string)(this["DatabaseConnectionString"]));
             }
         }
     }

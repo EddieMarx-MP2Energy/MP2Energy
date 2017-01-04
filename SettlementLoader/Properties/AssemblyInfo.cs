@@ -6,9 +6,9 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("SettlementLoader")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("PJM and ERCOT Settlement Statement and Extract Downloader & Loader")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("MP2 Energy")]
 [assembly: AssemblyProduct("SettlementLoader")]
 [assembly: AssemblyCopyright("Copyright ©  2016")]
 [assembly: AssemblyTrademark("")]

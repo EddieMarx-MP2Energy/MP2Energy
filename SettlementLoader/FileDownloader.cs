@@ -60,6 +60,7 @@ namespace SettlementLoader
                     //long fileSize = new System.Net.Mime.ContentDisposition(header_contentDisposition).Size;  // this didn't work, returns -1
                     long fileSize = new System.IO.FileInfo(targetFolder + tempFilename).Length;
 
+                    File.Delete(targetFolder + destinationFilename);
                     File.Move(targetFolder + tempFilename, targetFolder + destinationFilename);     // actual filename is not known until after the download starts
 
                     if (destinationFilename.ToLower().Contains(".zip"))
@@ -185,7 +186,7 @@ namespace SettlementLoader
                     sSQL += "    [source_directory], destination_address, utility_name, source_password" + Environment.NewLine;
                     sSQL += "from etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
-                    sSQL += "    AND transfer_method_cd = 'TM_ERCOT_MIS_HTTP'" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())

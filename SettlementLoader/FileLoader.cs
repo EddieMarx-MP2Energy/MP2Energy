@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Data.SqlClient;
 using System.IO;
+using System.Xml;
 
 namespace SettlementLoader
 {
@@ -25,10 +26,12 @@ namespace SettlementLoader
                     sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES')" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
+                    //sSQL += "    AND source_name like '%prde%'"; // TEMPORARY
+                    sSQL += "ORDER BY stop_date, file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
                     using (SqlCommand cmd = new SqlCommand(sSQL,connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())
@@ -54,6 +57,35 @@ namespace SettlementLoader
                                     FileLoader fileloader = new FileLoader();
                                     result = fileloader.LoadFileInSchedulesLosses(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_HTTP")
+                                {
+                                    if (dr["destination_filename"].ToString().Substring(dr["destination_filename"].ToString().Length-3).ToLower() == "xml")
+
+                                    {
+                                        FileLoader fileloader = new FileLoader();
+                                        result = fileloader.LoadFileERCOTExtract(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                    }
+                                    else
+                                    {
+                                        result = true;  // skip CSV files.  TODO:  do this better so that "true" is not returned and the file marked as skipped
+                                        Console.WriteLine("skipping CSV file");
+                                    }
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_HTTP_ST")
+                                {
+                                    if (dr["destination_filename"].ToString().Substring(dr["destination_filename"].ToString().Length - 3).ToLower() == "xml")
+
+                                    {
+                                        FileLoader fileloader = new FileLoader();
+                                        result = fileloader.LoadFileERCOTStatement(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                    }
+                                    else
+                                    {
+                                        result = true;  // skip CSV files.  TODO:  do this better so that "true" is not returned and the file marked as skipped
+                                        Console.WriteLine
+                                            ("skipping statement CSV file");
+                                    }
+                                }
 
                                 if (result)
                                 {
@@ -73,6 +105,111 @@ namespace SettlementLoader
             {
                 Console.WriteLine("Error:" + ex.Message);
                 Program.LogError(Properties.Settings.Default.TaskName + ":ProcessFiles", sSQL, ex);
+            }
+        }
+        public bool LoadFileERCOTStatement(long fileTransferTaskID, string pathName)
+        {
+            string sqlInsert = "";
+            string sqlValues = "";
+            long result = 0;
+            long result2 = 0;
+            long result3 = 0;
+            bool hasActivity = false;
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    XmlDocument xml = new XmlDocument();
+                    xml.Load(pathName);
+                    XmlNodeList xnList = xml.ChildNodes[0].ChildNodes[0].ChildNodes;//
+                    sqlInsert = "SET NOCOUNT ON; INSERT INTO etl.ercot_stmt (" + Environment.NewLine + "file_transfer_task_id,";
+                    sqlValues = "VALUES (" + fileTransferTaskID + ",";
+
+                    // ITERATE THROUGH STATEMENTS
+                    foreach (XmlNode xmlRow in xnList)
+                    {
+                        sqlInsert += xmlRow.Name + ",";
+                        sqlValues += Program.IsEmptyWithQuotes(xmlRow.InnerText) + ",";
+                    }
+
+                    sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                    sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+                    using (SqlCommand cmd = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
+                    {
+                        result = Convert.ToInt64(cmd.ExecuteScalar());
+                    }
+
+                    // ITERATE THROUGH CHARGE LINE ITEMS ON STATEMENT
+                    xnList = xml.ChildNodes[0].ChildNodes[1].ChildNodes;//
+                    foreach (XmlNode xmlRow in xnList)
+                    {
+                        sqlInsert = "SET NOCOUNT ON; INSERT INTO etl.ercot_stmt_charge (" + Environment.NewLine + "ercot_stmt_id,";
+                        sqlValues = "VALUES (" + result + ",";
+
+                        foreach (XmlNode xmlRow2 in xmlRow)
+                        {
+                            if (xmlRow2.Name == "BillingDetails")
+                            {
+                                // ITERATE THROUGH CHARGE LINE ITEM DETAILS
+                                hasActivity = false;
+                                foreach (XmlNode xmlCharge in xmlRow2)
+                                {
+                                    sqlInsert += xmlCharge.Name + ",";
+                                    sqlValues += Program.IsEmptyWithQuotes(xmlCharge.InnerText) + ",";
+                                    if (xmlCharge.InnerText == "YES") hasActivity = true;   //TODO: check element name also
+                                }
+
+                                sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                                sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+                                using (SqlCommand cmdCharge = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
+
+                                {
+                                    result2 = Convert.ToInt64(cmdCharge.ExecuteScalar());
+                                }
+                            }
+                            else if (hasActivity)
+                            { 
+                                // ITERATE THROUGH INTERVALS FOR CHARGE LINE ITEM
+                                sqlInsert = "INSERT INTO etl.ercot_stmt_charge_detail (" + Environment.NewLine + "ercot_stmt_charge_id,";
+                                sqlValues = "VALUES (" + result2 + ",";
+
+                                if (xmlRow2.Name != "NumberOfIntervals")
+                                {
+                                    foreach (XmlNode xmlCharge in xmlRow2)
+                                    {
+                                        sqlInsert += xmlCharge.Name + ",";
+                                        sqlValues += Program.IsEmptyWithQuotes(xmlCharge.InnerText) + ",";
+                                    }
+
+                                    sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                                    sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+
+                                    using (SqlCommand cmdChargeDetail = new SqlCommand(sqlInsert + sqlValues, connection))
+                                    {
+                                        result3 = Convert.ToInt64(cmdChargeDetail.ExecuteNonQuery());
+                                        //hasActivity = false;
+                                    }
+                                   // break;
+                                }
+                            }
+                            else
+                            {
+                                sqlInsert += xmlRow2.Name + ",";
+                                sqlValues += Program.IsEmptyWithQuotes(xmlRow2.InnerText) + ",";
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
+                return false;
             }
         }
         private bool LoadFileMSRSReport(long fileTransferTaskID, string pathName, string sourceName)
@@ -114,7 +251,33 @@ namespace SettlementLoader
                                 sSQL = sqlInsert + " VALUES (" + fileTransferTaskID + ", " + GenerateDataSQL(columnData);
                                 using (SqlCommand cmd = new SqlCommand(sSQL,connection))
                                 {
-                                    int result = cmd.ExecuteNonQuery();
+                                    try
+                                    {
+                                        int result = cmd.ExecuteNonQuery();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        if (ex.Message.Contains("duplicate"))
+                                        {
+                                            //Console.WriteLine("duplicate");
+                                            // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                        }
+                                        else
+                                        {
+                                            if (ex.Message.Contains("conflicted"))
+                                            {
+                                                // errors happen here when the DETAIL file is attempted to load before the HEADER files.  On the next go around, maybe the HEADER will have loaded
+                                                Console.WriteLine("Error:" + ex.Message);
+                                                return false;
+                                            }
+                                            else
+                                            {
+                                                Console.WriteLine("Error:" + ex.Message);
+                                                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert, ex);
+                                                return false;
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -210,7 +373,26 @@ namespace SettlementLoader
                         sSQL += fileTransferTaskID + "); SELECT SCOPE_IDENTITY();";
                         using (SqlCommand cmd = new SqlCommand(sSQL, connection, tran))
                         {
-                            billID = Convert.ToInt64(cmd.ExecuteScalar());
+                            try
+                            {
+                                billID = Convert.ToInt64(cmd.ExecuteScalar());
+                            }
+                            catch (Exception ex)
+                            {
+                                if (ex.Message.Contains("duplicate"))
+                                {
+                                    tran.Rollback();
+                                    //Console.WriteLine("duplicate");
+                                    return true;
+                                }
+                                else
+                                {
+                                    tran.Rollback();
+                                    Console.WriteLine("Error:" + ex.Message);
+                                    Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                                    return false;
+                                }
+                            }
                         }
 
                         currentLine = sr.ReadLine();    // skip blank row
@@ -240,8 +422,25 @@ namespace SettlementLoader
 
                                     using (SqlCommand cmd = new SqlCommand(sSQL,connection,tran))
                                     {
-                                        int result = cmd.ExecuteNonQuery();
-                                        hadDetail = true;
+                                        try
+                                        {
+                                            int result = cmd.ExecuteNonQuery();
+                                            hadDetail = true;
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            if (ex.Message.Contains("duplicate"))
+                                            {
+                                                //Console.WriteLine("duplicate");
+                                            }
+                                            else
+                                            {
+                                                tran.Rollback();
+                                                Console.WriteLine("Error:" + ex.Message);
+                                                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                                                return false;
+                                            }
+                                        }
                                     }
                                 }
                                 else if (columns[2].ToString().Contains("Total Charges")) totalCharges = Convert.ToDouble(columns[4]);
@@ -336,6 +535,72 @@ namespace SettlementLoader
             {
                 Console.WriteLine("Error:" + ex.Message);
                 Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                return false;
+            }
+        }
+        public bool LoadFileERCOTExtract(long fileTransferTaskID, string pathName)
+        {
+            string sqlInsert = "";
+            string sqlValues = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+                    
+                    XmlDocument xml = new XmlDocument();
+                    xml.Load(pathName);
+                    XmlNodeList xnList = xml.ChildNodes;
+                    foreach (XmlNode xmlRow in xnList[1])
+                        {
+                        //StringBuilder sb = new StringBuilder();sb.Append(" ");
+                        sqlInsert = "INSERT INTO mis." + xnList[1].FirstChild.Name + " (" + Environment.NewLine + "file_transfer_task_id,";
+                        sqlValues = "VALUES (" + fileTransferTaskID + ",";
+                        foreach (XmlNode xmlCol in xmlRow.ChildNodes)
+                        {
+                            sqlInsert += xmlCol.Name + "," ;
+                            sqlValues += Program.IsEmptyWithQuotes(xmlCol.InnerText) + ",";
+                        }
+                        sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                        sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+                        using (SqlCommand cmd = new SqlCommand(sqlInsert + sqlValues, connection))
+                        {try
+                            {
+                                int result = cmd.ExecuteNonQuery();
+                            }
+                            catch (Exception ex)
+                            {
+                                if (ex.Message.Contains("duplicate"))
+                                {
+                                    //Console.WriteLine("duplicate");
+                                    // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                }
+                                else
+                                {   
+                                    if (ex.Message.Contains("conflicted"))
+                                    {
+                                        // errors happen here when the DETAIL file is attempted to load before the HEADER files.  On the next go around, maybe the HEADER will have loaded
+                                        Console.WriteLine("Error:" + ex.Message);
+                                        return false;
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("Error:" + ex.Message);
+                                       Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
                 return false;
             }
         }

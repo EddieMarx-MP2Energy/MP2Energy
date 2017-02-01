@@ -26,7 +26,8 @@ namespace SettlementLoader
                     sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  // this for ercot statements (testing)
+                    //sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  //  this for everything but ercot statements (production)
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
@@ -38,7 +39,7 @@ namespace SettlementLoader
                         {
                             while (dr.Read())
                             {
-                                Program.UpdateTaskStatus(Convert.ToInt64(dr["file_transfer_task_id"]), loadStatusCode: "FTTD_LOADING");
+                                Program.UpdateTaskStatus(Convert.ToInt64(dr["file_transfer_task_id"]), loadStatusCode: "FTTL_LOADING");
 
                                 bool result = false;
 
@@ -112,8 +113,9 @@ namespace SettlementLoader
             string sqlInsert = "";
             string sqlValues = "";
             long result = 0;
-            long result2 = 0;
             long result3 = 0;
+            long resultCharge = 0;
+            long resultBillDetail = 0;
             bool hasActivity = false;
 
             try
@@ -123,58 +125,102 @@ namespace SettlementLoader
                     connection.Open();
 
                     XmlDocument xml = new XmlDocument();
+                    //xml.Load("\\\\mp2-filesrv1\\wholesale\\OEA\\PJM\\Monthly_Settlements\\ERCOTData\\ercot_rtm_stmt_124268_rpt.00011107.0008281436312200.20161220.091527229.RTM_TRUEUP_STATEMENT_20160623_8281436312200_T3.XML");
                     xml.Load(pathName);
-                    XmlNodeList xnList = xml.ChildNodes[0].ChildNodes[0].ChildNodes;//
+                    XmlNodeList xnList = xml.ChildNodes[0].ChildNodes[0].ChildNodes;
                     sqlInsert = "SET NOCOUNT ON; INSERT INTO etl.ercot_stmt (" + Environment.NewLine + "file_transfer_task_id,";
                     sqlValues = "VALUES (" + fileTransferTaskID + ",";
 
-                    // ITERATE THROUGH STATEMENTS
                     foreach (XmlNode xmlRow in xnList)
                     {
                         sqlInsert += xmlRow.Name + ",";
                         sqlValues += Program.IsEmptyWithQuotes(xmlRow.InnerText) + ",";
                     }
 
-                    sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
-                    sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+                    // GET TOTALS FROM END OF DOCUMENT
+                    //xnList = xml.ChildNodes[0].ChildNodes[2].ChildNodes;
+                    xnList = xml.SelectNodes("/Statement/Summary/CurrentDollars");
+                    sqlInsert += "StatementTotal, NetAmount)" + Environment.NewLine;
+                    sqlValues += xnList[0].ChildNodes[0].InnerText + "," + xnList[0].ChildNodes[1].InnerText + ")" + Environment.NewLine;
+
                     using (SqlCommand cmd = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
                     {
-                        result = Convert.ToInt64(cmd.ExecuteScalar());
+                        try
+                        {
+                            result = Convert.ToInt64(cmd.ExecuteScalar());
+                        }
+                        catch (Exception ex)
+                        {
+                            if (ex.Message.Contains("duplicate"))
+                            {
+                                //Console.WriteLine("duplicate");
+                                // only one statement per file
+                                // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                return true;
+                            }
+                            else
+                            {
+                                if (ex.Message.Contains("conflicted"))
+                                {
+                                    Console.WriteLine("Error:" + ex.Message);
+                                    return false;
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Error:" + ex.Message);
+                                    Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
+                                    return false;
+                                }
+                            }
+                        }
                     }
 
-                    // ITERATE THROUGH CHARGE LINE ITEMS ON STATEMENT
-                    xnList = xml.ChildNodes[0].ChildNodes[1].ChildNodes;//
+                    xnList = xml.ChildNodes[0].ChildNodes[1].ChildNodes;
                     foreach (XmlNode xmlRow in xnList)
                     {
                         sqlInsert = "SET NOCOUNT ON; INSERT INTO etl.ercot_stmt_charge (" + Environment.NewLine + "ercot_stmt_id,";
                         sqlValues = "VALUES (" + result + ",";
+                        hasActivity = false;
 
                         foreach (XmlNode xmlRow2 in xmlRow)
                         {
                             if (xmlRow2.Name == "BillingDetails")
                             {
-                                // ITERATE THROUGH CHARGE LINE ITEM DETAILS
-                                hasActivity = false;
-                                foreach (XmlNode xmlCharge in xmlRow2)
+                                if (sqlInsert.Contains("etl.ercot_stmt_charge"))
                                 {
-                                    sqlInsert += xmlCharge.Name + ",";
-                                    sqlValues += Program.IsEmptyWithQuotes(xmlCharge.InnerText) + ",";
-                                    if (xmlCharge.InnerText == "YES") hasActivity = true;   //TODO: check element name also
+                                    // SAVE CHARGE LINE ITEMS THAT HAPPENED IN ercot_stmt_charge
+                                    sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                                    sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
+                                    using (SqlCommand cmdCharge = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
+
+                                    {
+                                        resultCharge = Convert.ToInt64(cmdCharge.ExecuteScalar());
+                                    }
+                                }
+                                sqlInsert = "SET NOCOUNT ON; INSERT INTO etl.ercot_stmt_bill_detail (" + Environment.NewLine + "ercot_stmt_charge_id,";
+                                sqlValues = "VALUES (" + resultCharge + ",";
+
+                                hasActivity = false;
+                                foreach (XmlNode xmlBillDetail in xmlRow2)
+                                {
+                                    sqlInsert += xmlBillDetail.Name + ",";
+                                    sqlValues += Program.IsEmptyWithQuotes(xmlBillDetail.InnerText) + ",";
+                                    if (xmlBillDetail.InnerText == "YES") hasActivity = true;   //TODO: check element name also
                                 }
 
                                 sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
                                 sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
-                                using (SqlCommand cmdCharge = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
+                                using (SqlCommand cmdBillDetail = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
 
                                 {
-                                    result2 = Convert.ToInt64(cmdCharge.ExecuteScalar());
+                                    resultBillDetail = Convert.ToInt64(cmdBillDetail.ExecuteScalar());
                                 }
                             }
                             else if (hasActivity)
                             { 
                                 // ITERATE THROUGH INTERVALS FOR CHARGE LINE ITEM
                                 sqlInsert = "INSERT INTO etl.ercot_stmt_charge_detail (" + Environment.NewLine + "ercot_stmt_charge_id,";
-                                sqlValues = "VALUES (" + result2 + ",";
+                                sqlValues = "VALUES (" + resultCharge + ",";
 
                                 if (xmlRow2.Name != "NumberOfIntervals")
                                 {
@@ -190,10 +236,10 @@ namespace SettlementLoader
                                     using (SqlCommand cmdChargeDetail = new SqlCommand(sqlInsert + sqlValues, connection))
                                     {
                                         result3 = Convert.ToInt64(cmdChargeDetail.ExecuteNonQuery());
-                                        //hasActivity = false;
                                     }
                                    // break;
                                 }
+                                
                             }
                             else
                             {

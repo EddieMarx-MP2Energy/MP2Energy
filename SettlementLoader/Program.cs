@@ -12,13 +12,15 @@ namespace SettlementLoader
     {
         static void Main(string[] args)
         {
-            //DownloadManager.CreateTransferTasksMSRS();
-            //DownloadManager.CreateTransferTasksERCOT();
+            DownloadManager.CreateTransferTasksMSRS();
+            DownloadManager.CreateTransferTasksERCOT();
             DownloadManager.ProcessDownloads();
             Program.ProcessZipFiles();
             FileLoader.ProcessFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
+            Console.Beep(1000,5000);
+            System.Media.SystemSounds.Beep.Play();
             Console.WriteLine("PRESS ENTER");
             Console.ReadLine();
         }

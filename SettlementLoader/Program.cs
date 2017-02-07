@@ -12,10 +12,10 @@ namespace SettlementLoader
     {
         static void Main(string[] args)
         {
-            DownloadManager.CreateTransferTasksMSRS();
-            DownloadManager.CreateTransferTasksERCOT();
-            DownloadManager.ProcessDownloads();
-            Program.ProcessZipFiles();
+            //DownloadManager.CreateTransferTasksMSRS();
+            //DownloadManager.CreateTransferTasksERCOT();
+            //DownloadManager.ProcessDownloads();
+            //Program.ProcessZipFiles();
             FileLoader.ProcessFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
@@ -251,7 +251,8 @@ namespace SettlementLoader
                     // Get files ready to be unzipped
                     sSQL = "SELECT file_transfer_task_id, file_transfer_task.file_transfer_source_id, file_transfer_source.source_name, file_transfer_task.source_address," + Environment.NewLine;
                     sSQL += "file_transfer_task.destination_address, source_certificate_path, source_password, destination_directory, destination_filename" + Environment.NewLine;
-                    sSQL += "FROM etl.file_transfer_task WITH (NOLOCK), etl.file_transfer_source WITH (NOLOCK)" + Environment.NewLine;
+                    sSQL += "FROM etl.file_transfer_task WITH (NOLOCK), etl.file_transfer_source" + Environment.NewLine;
+                    //sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED_ZIP')" + Environment.NewLine;
                     sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))

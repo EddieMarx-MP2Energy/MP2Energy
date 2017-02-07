@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using System.Data.SqlClient;
 using System.IO;
 using System.Xml;
+using System.Web;
 
 namespace SettlementLoader
 {
@@ -21,19 +23,20 @@ namespace SettlementLoader
                 using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
-                    
+
                     // Process downloaded files ready for load
                     sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+                    sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  // this for ercot statements (testing)
-                    //sSQL += "    AND transfer_method_cd IN ('TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  //  this for everything but ercot statements (production)
+                    //sSQL += "    AND transfer_method_cd IN ('xxxTM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  // this for ercot statements (testing)
+                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'xxxTM_MSRS_HTTP', 'xxxTM_MSRS_BILL_HTTP', 'xxxTM_INSCHEDULES', 'xxxTM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  //  this for everything but ercot statements (production)
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
                     //sSQL += "    AND source_name like '%prde%'"; // TEMPORARY
                     sSQL += "ORDER BY stop_date, file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
-                    using (SqlCommand cmd = new SqlCommand(sSQL,connection))
+                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())
                         {
@@ -60,7 +63,7 @@ namespace SettlementLoader
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_HTTP")
                                 {
-                                    if (dr["destination_filename"].ToString().Substring(dr["destination_filename"].ToString().Length-3).ToLower() == "xml")
+                                    if (dr["destination_filename"].ToString().Substring(dr["destination_filename"].ToString().Length - 3).ToLower() == "xml")
 
                                     {
                                         FileLoader fileloader = new FileLoader();
@@ -86,6 +89,11 @@ namespace SettlementLoader
                                         Console.WriteLine
                                             ("skipping statement CSV file");
                                     }
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_JSON_LMP")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFileMinerLMP(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
 
                                 if (result)
@@ -217,7 +225,7 @@ namespace SettlementLoader
                                 }
                             }
                             else if (hasActivity)
-                            { 
+                            {
                                 // ITERATE THROUGH INTERVALS FOR CHARGE LINE ITEM
                                 sqlInsert = "INSERT INTO etl.ercot_stmt_charge_detail (" + Environment.NewLine + "ercot_stmt_charge_id,";
                                 sqlValues = "VALUES (" + resultCharge + ",";
@@ -237,9 +245,9 @@ namespace SettlementLoader
                                     {
                                         result3 = Convert.ToInt64(cmdChargeDetail.ExecuteNonQuery());
                                     }
-                                   // break;
+                                    // break;
                                 }
-                                
+
                             }
                             else
                             {
@@ -295,7 +303,7 @@ namespace SettlementLoader
                             {
                                 columnData = Program.SplitRow(currentLine).ToArray();
                                 sSQL = sqlInsert + " VALUES (" + fileTransferTaskID + ", " + GenerateDataSQL(columnData);
-                                using (SqlCommand cmd = new SqlCommand(sSQL,connection))
+                                using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                                 {
                                     try
                                     {
@@ -361,7 +369,7 @@ namespace SettlementLoader
         }
         private static string GenerateDataSQL(string[] columnData)
         {
-            string valuesSQL =""; //= "VALUES (" + fileTransferTaskID + ", ";
+            string valuesSQL = ""; //= "VALUES (" + fileTransferTaskID + ", ";
             for (int i = 0; i < columnData.Length; i++)
             {
                 if (Program.IsNumeric(columnData[i]))
@@ -466,7 +474,7 @@ namespace SettlementLoader
                                     sSQL += " " + columns[4] + "," + Environment.NewLine;  // amount
                                     sSQL += " " + billID + ")" + Environment.NewLine;
 
-                                    using (SqlCommand cmd = new SqlCommand(sSQL,connection,tran))
+                                    using (SqlCommand cmd = new SqlCommand(sSQL, connection, tran))
                                     {
                                         try
                                         {
@@ -506,7 +514,7 @@ namespace SettlementLoader
                             sSQL += "  [Previous Weekly Billing Net Total] = " + previousWeeklyBillingNetTotal + "," + Environment.NewLine;
                             sSQL += "  [Total Due] = " + totalDue + Environment.NewLine;
                             sSQL += "WHERE msrs_BILLCSVXML_id = " + billID + Environment.NewLine;
-                            using (SqlCommand cmd = new SqlCommand(sSQL, connection,tran))
+                            using (SqlCommand cmd = new SqlCommand(sSQL, connection, tran))
                             {
                                 int result = cmd.ExecuteNonQuery();
                                 tran.Commit();
@@ -594,24 +602,25 @@ namespace SettlementLoader
                 using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
-                    
+
                     XmlDocument xml = new XmlDocument();
                     xml.Load(pathName);
                     XmlNodeList xnList = xml.ChildNodes;
                     foreach (XmlNode xmlRow in xnList[1])
-                        {
+                    {
                         //StringBuilder sb = new StringBuilder();sb.Append(" ");
                         sqlInsert = "INSERT INTO mis." + xnList[1].FirstChild.Name + " (" + Environment.NewLine + "file_transfer_task_id,";
                         sqlValues = "VALUES (" + fileTransferTaskID + ",";
                         foreach (XmlNode xmlCol in xmlRow.ChildNodes)
                         {
-                            sqlInsert += xmlCol.Name + "," ;
+                            sqlInsert += xmlCol.Name + ",";
                             sqlValues += Program.IsEmptyWithQuotes(xmlCol.InnerText) + ",";
                         }
                         sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
                         sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
                         using (SqlCommand cmd = new SqlCommand(sqlInsert + sqlValues, connection))
-                        {try
+                        {
+                            try
                             {
                                 int result = cmd.ExecuteNonQuery();
                             }
@@ -623,7 +632,7 @@ namespace SettlementLoader
                                     // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
                                 }
                                 else
-                                {   
+                                {
                                     if (ex.Message.Contains("conflicted"))
                                     {
                                         // errors happen here when the DETAIL file is attempted to load before the HEADER files.  On the next go around, maybe the HEADER will have loaded
@@ -633,7 +642,7 @@ namespace SettlementLoader
                                     else
                                     {
                                         Console.WriteLine("Error:" + ex.Message);
-                                       Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
+                                        Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sqlInsert + sqlValues, ex);
                                         return false;
                                     }
                                 }
@@ -641,7 +650,7 @@ namespace SettlementLoader
                         }
                     }
                 }
-                    return true;
+                return true;
             }
             catch (Exception ex)
             {
@@ -650,6 +659,63 @@ namespace SettlementLoader
                 return false;
             }
         }
-    }
 
+        private bool LoadFileMinerLMP(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+                    
+                    dynamic priceTypes = JsonConvert.DeserializeObject(File.ReadAllText(pathName));
+
+                    for (int l = 0; l < priceTypes.Count; l++)
+                    {
+                        for (int p = 0; p < priceTypes[l].prices.Count; p++)
+                        {
+                            sSQL = "INSERT INTO etl.miner_lmp (file_transfer_task_id, publishDate, pnodeId," + Environment.NewLine;
+                            sSQL += "versionNum, priceType, utchour, price) VALUES (" + fileTransferTaskID + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].publishDate.ToString()) + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].pnodeId.ToString()) + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].versionNum.ToString()) + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].priceType.ToString()) + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].prices[p].utchour.ToString()) + "," + Environment.NewLine;
+                            sSQL += Program.IsEmptyWithQuotes(priceTypes[l].prices[p].price.ToString()) + ")" + Environment.NewLine;
+                            try
+                            {
+                                using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                {
+                                    int result = cmd.ExecuteNonQuery();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                if (ex.Message.Contains("duplicate"))
+                                {
+                                    //Console.WriteLine("duplicate");
+                                    return true;
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Error:" + ex.Message);
+                                    Program.LogError(Properties.Settings.Default.TaskName + ":LoadFileMinerLMP", sSQL, ex);
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFileMinerLMP", sSQL, ex);
+                return false;
+            }
+        }
+    }
 }

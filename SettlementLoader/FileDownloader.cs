@@ -42,19 +42,25 @@ namespace SettlementLoader
                         // for pjm and no certificate needed
                         ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                     }
-
                     downloader.DownloadFile(new Uri(sourceUrl), targetFolder + tempFilename);
 
                     string header_contentDisposition = downloader.ResponseHeaders["content-disposition"];
                     string filename;
 
-                    if (header_contentDisposition.Contains("("))
+                    if (String.IsNullOrEmpty(header_contentDisposition))
                     {
-                        filename = header_contentDisposition.Substring(header_contentDisposition.IndexOf("filename=") + 9);
+                        filename = "null.csv";
                     }
                     else
                     {
-                        filename = new System.Net.Mime.ContentDisposition(header_contentDisposition).FileName;
+                        if (header_contentDisposition.Contains("("))
+                        {
+                            filename = header_contentDisposition.Substring(header_contentDisposition.IndexOf("filename=") + 9);
+                        }
+                        else
+                        {
+                            filename = new System.Net.Mime.ContentDisposition(header_contentDisposition).FileName;
+                        }
                     }
                     string destinationFilename = sourceName + "_" + fileTransferTaskID + "_" + filename;
                     //long fileSize = new System.Net.Mime.ContentDisposition(header_contentDisposition).Size;  // this didn't work, returns -1
@@ -109,6 +115,7 @@ namespace SettlementLoader
                     sSQL = "SELECT file_transfer_task.file_transfer_task_id, file_transfer_source.source_name, file_transfer_task.source_address," + Environment.NewLine;
                     sSQL += "file_transfer_task.destination_address, source_certificate_path, source_password" + Environment.NewLine;
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+                    sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOAD_QUEUED', 'FTTD_RETRY')" + Environment.NewLine;
                     sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
 
@@ -185,6 +192,7 @@ namespace SettlementLoader
                     sSQL = "select file_transfer_source_id, source_name, source_address, source_certificate_path," + Environment.NewLine;
                     sSQL += "    [source_directory], destination_address, utility_name, source_password" + Environment.NewLine;
                     sSQL += "from etl.file_transfer_source" + Environment.NewLine;
+                    //sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
                     sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))

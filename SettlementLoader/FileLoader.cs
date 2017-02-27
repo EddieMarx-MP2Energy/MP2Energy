@@ -29,8 +29,7 @@ namespace SettlementLoader
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    //sSQL += "    AND transfer_method_cd IN ('xxxTM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  // this for ercot statements (testing)
-                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'xxxTM_MSRS_HTTP', 'xxxTM_MSRS_BILL_HTTP', 'xxxTM_INSCHEDULES', 'xxxTM_ERCOT_MIS_HTTP', 'xxxTM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  //  this for everything but ercot statements (production)
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
@@ -574,10 +573,17 @@ namespace SettlementLoader
                                     }
                                 }
                                 catch (Exception ex)
-                                { //TODO: update the record in the future.}
-                                    //TODO:  allow sqlclient.sqlexception to continue, or replace with MERGE statement
-                                    Console.WriteLine("ERROR:" + ex.Message);
-                                    //return false;
+                                { 
+                                    if (ex.Message.Contains("duplicate"))
+                                    {
+                                        //Console.WriteLine("duplicate");
+                                        // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                    }
+                                    else
+                                    { //TODO: update the record in the future.}
+                                        Console.WriteLine("ERROR:" + ex.Message);
+                                        return false;
+                                    }
                                 }
                             }
                         }
@@ -696,7 +702,8 @@ namespace SettlementLoader
                                 if (ex.Message.Contains("duplicate"))
                                 {
                                     //Console.WriteLine("duplicate");
-                                    return true;
+                                    //return true;
+                                    // do nothing on duplicates.  TODO: replace with MERGE
                                 }
                                 else
                                 {

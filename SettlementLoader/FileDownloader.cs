@@ -22,6 +22,7 @@ namespace SettlementLoader
             {
                 using (MyWebClient downloader = new MyWebClient())
                 {
+                    downloader.Headers.Add("user-agent", "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)");
                     if (certPath != "")
                     {   // Create a collection object and populate it using the PFX file
                         if (downloader.Certificate == null)
@@ -41,7 +42,9 @@ namespace SettlementLoader
                     {
                         // for pjm and no certificate needed
                         ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                        ServicePointManager.Expect100Continue = true;
                     }
+                    downloader.UseDefaultCredentials = false;
                     downloader.DownloadFile(new Uri(sourceUrl), targetFolder + tempFilename);
 
                     string header_contentDisposition = downloader.ResponseHeaders["content-disposition"];
@@ -67,21 +70,31 @@ namespace SettlementLoader
                     long fileSize = new System.IO.FileInfo(targetFolder + tempFilename).Length;
 
                     File.Delete(targetFolder + destinationFilename);
-                    File.Move(targetFolder + tempFilename, targetFolder + destinationFilename);     // actual filename is not known until after the download starts
-
-                    if (destinationFilename.ToLower().Contains(".zip"))
+                    var sources = new List<string>() { "monthlybillingstatement", "weeklybillingstatement" };
+                    if ((sources.Contains(sourceName)) && fileSize <= (25 * 1024))
                     {
-
-                        Console.WriteLine("Download zipped file completed:" + destinationFilename);
-                        Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED_ZIP", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
+                        Console.WriteLine("Skipped PJM PDF Statement due to size:" + destinationFilename);
+                        File.Move(targetFolder + tempFilename, targetFolder + destinationFilename + ".delete");
+                        //File.Delete(targetFolder + destinationFilename);
+                        Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED", loadStatusCode: "FTTD_SKIP", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
                     }
                     else
                     {
+                        File.Move(targetFolder + tempFilename, targetFolder + destinationFilename);     // actual filename is not known until after the download starts
 
-                        Console.WriteLine("Download Completed:" + destinationFilename);
-                        Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
+                        if (destinationFilename.ToLower().Contains(".zip"))
+                        {
+
+                            Console.WriteLine("Download zipped file completed:" + destinationFilename);
+                            Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED_ZIP", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
+                        }
+                        else
+                        {
+
+                            Console.WriteLine("Download Completed:" + destinationFilename);
+                            Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
+                        }
                     }
-
                     Program.LogSession(Properties.Settings.Default.TaskName + ":DownloadFile", destinationFilename, startTime);
                     return true;
                 }
@@ -117,6 +130,7 @@ namespace SettlementLoader
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOAD_QUEUED', 'FTTD_RETRY')" + Environment.NewLine;
+                    sSQL += "AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;  // TEMPORARY
                     sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
 
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
@@ -193,7 +207,8 @@ namespace SettlementLoader
                     sSQL += "    [source_directory], destination_address, utility_name, source_password" + Environment.NewLine;
                     sSQL += "from etl.file_transfer_source" + Environment.NewLine;
                     //sSQL += "with (nolock)" + Environment.NewLine;
-                    sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
+                    //sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
+                    sSQL += "where status_cd = 'FTS_DEV'" + Environment.NewLine;    // TEMPORARY
                     sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {

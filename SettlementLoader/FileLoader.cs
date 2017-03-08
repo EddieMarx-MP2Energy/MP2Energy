@@ -29,6 +29,8 @@ namespace SettlementLoader
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
+                    sSQL += "    AND status_cd = 'FTS_DEV'";  // TEMPORARY
+                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;  // TEMPORARY
                     sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;

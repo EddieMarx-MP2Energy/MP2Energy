@@ -5,6 +5,8 @@ using System.Text;
 using System.Data.SqlClient;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Mail;
 
 namespace SettlementLoader
 {
@@ -21,6 +23,7 @@ namespace SettlementLoader
             // pause for ENTER key to prevent error messages from clearing after program ends
             Console.Beep(1000,5000);
             System.Media.SystemSounds.Beep.Play();
+            //SendAttachmentViaEmail("eddie.marx@mp2energy.com", "Test Subject", "Test Body", "C:\\Users\\eddie.marx\\Documents\\apx\\msrs\\browserless-do-http-get-call-instructions.pdf");
             Console.WriteLine("PRESS ENTER");
             Console.ReadLine();
         }
@@ -239,11 +242,10 @@ namespace SettlementLoader
             string sSQL = "";
             DateTime startTime = DateTime.Now;
             List<Program.FileList> files = new List<Program.FileList>();
-
-
-            // Open database connection
+            
             try
             {
+                // Open database connection
                 using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
@@ -252,7 +254,6 @@ namespace SettlementLoader
                     sSQL = "SELECT file_transfer_task_id, file_transfer_task.file_transfer_source_id, file_transfer_source.source_name, file_transfer_task.source_address," + Environment.NewLine;
                     sSQL += "file_transfer_task.destination_address, source_certificate_path, source_password, destination_directory, destination_filename" + Environment.NewLine;
                     sSQL += "FROM etl.file_transfer_task WITH (NOLOCK), etl.file_transfer_source" + Environment.NewLine;
-                    //sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED_ZIP')" + Environment.NewLine;
                     sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
@@ -290,6 +291,33 @@ namespace SettlementLoader
             {
                 Console.WriteLine("Error:" + ex.Message);
                 Program.LogError(Properties.Settings.Default.TaskName + ":UnzipFile", " ", ex);
+            }
+        }
+        public static void SendAttachmentViaEmail(string messageRecipient, string messageSubject, string messageBody, string filePathname)
+        {
+            try
+            {
+                MailMessage mail = new MailMessage();
+                SmtpClient SmtpServer = new SmtpClient("10.0.0.71");
+                mail.From = new MailAddress("eddie.marx@mp2energy.com","Settlement Database");
+                mail.To.Add(messageRecipient);
+                mail.Subject = messageSubject;
+                mail.Body = messageBody;
+
+                System.Net.Mail.Attachment attachment;
+                attachment = new System.Net.Mail.Attachment(filePathname);
+                mail.Attachments.Add(attachment);
+
+                //SmtpServer.Credentials = new System.Net.NetworkCredential("eddie.marx@mp2energy.com", "password", "M2SQ");
+                //SmtpServer.DeliveryMethod = SmtpDeliveryMethod.Network;
+                //SmtpServer.Credentials = System.Net.CredentialCache.DefaultNetworkCredentials;
+                //SmtpServer.UseDefaultCredentials = true;
+
+                SmtpServer.Send(mail);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
             }
         }
     }

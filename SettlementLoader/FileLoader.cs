@@ -29,9 +29,8 @@ namespace SettlementLoader
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND status_cd = 'FTS_DEV'";  // TEMPORARY
-                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;  // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST')" + Environment.NewLine;  
+                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;  // TEMPORARY
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE')" + Environment.NewLine;  
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
@@ -61,6 +60,16 @@ namespace SettlementLoader
                                 {
                                     FileLoader fileloader = new FileLoader();
                                     result = fileloader.LoadFileInSchedulesLosses(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_HTTP_LOSS")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFileERCOTLosses(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_HTTP_PROFILE")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFileERCOTProfiles(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_HTTP")
                                 {
@@ -723,6 +732,159 @@ namespace SettlementLoader
             {
                 Console.WriteLine("Error:" + ex.Message);
                 Program.LogError(Properties.Settings.Default.TaskName + ":LoadFileMinerLMP", sSQL, ex);
+                return false;
+            }
+        }
+        private bool LoadFileERCOTLosses(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    // open downloaded file
+                    using (StreamReader sr = new StreamReader(pathName))
+                    {
+                        string currentLine;
+                        string[] columnData;
+                        DateTime tradeDate;
+                        int valueStart;
+
+                        // rely on null exception if the file is mal-formatted
+                        currentLine = sr.ReadLine(); // skip column headers
+                        currentLine = sr.ReadLine(); // skip LACTERCOT (system load)
+
+                        // currentLine will be null when the StreamReader reaches the end of file
+                        while ((currentLine = sr.ReadLine()) != null)
+                        {
+                            //Console.WriteLine(currentLine);
+                            if (currentLine.Contains(",")) // skip any blank line
+                            {
+                                columnData = Program.SplitRow(currentLine).ToArray();
+
+                                for (int i = 0; i < 96; i++)    // TODO:  does not handle ending of daylights savings time 
+                                {
+                                    sSQL = "INSERT INTO mis.loss_factor (file_transfer_task_id, recorder_name, utility_name, tdsp_code, duns_number," + Environment.NewLine;
+                                    sSQL += "loss_code, date_time_stamp, loss_factor_value)" + Environment.NewLine;
+                                    sSQL += "VALUES (" + fileTransferTaskID + ", ";
+                                    sSQL += Program.IsEmptyWithQuotes(columnData[0]) + ",";   // recorder name
+
+                                    if (columnData[0] == "ACTLOSSFACT")     // these are transmission loss factors, one per ISO (ercot)
+                                    {
+                                        sSQL += "'ERCOT', NULL, NULL, 'T'," + Environment.NewLine;
+                                        tradeDate = Convert.ToDateTime(columnData[1]);
+                                        valueStart = 4;
+                                    }
+                                    else
+                                    {
+                                        // these are distribution loss factors, one for each tdsp
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[1]) + ", ";    // TDSP name
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[2]) + ", ";    // TDSP code
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[3]) + ", ";    // DUNS number
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[4]) + ", ";    // loss code (voltage level)
+                                        tradeDate = Convert.ToDateTime(columnData[5]);
+                                        valueStart = 8;
+                                    }
+
+                                    sSQL += "'" + tradeDate.AddMinutes((i + 1) * 15) + "',";   // date time stamp
+                                    sSQL += "'" + columnData[valueStart + i] + "')" + Environment.NewLine;   // loss factor value
+
+                                    try
+                                    {
+                                        using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                        {
+                                            int result = cmd.ExecuteNonQuery();
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        if (ex.Message.Contains("duplicate"))
+                                        {
+                                            //Console.WriteLine("duplicate");
+                                            // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                        }
+                                        else
+                                        { //TODO: update the record in the future.}
+                                            Console.WriteLine("ERROR:" + ex.Message);
+                                            return false;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                return false;
+            }
+        }
+        private bool LoadFileERCOTProfiles(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    // open downloaded file
+                    using (StreamReader sr = new StreamReader(pathName))
+                    {
+                        string currentLine;
+                        string[] columnData;
+
+                        // rely on null exception if the file is mal-formatted
+                        currentLine = sr.ReadLine(); // skip column headers
+
+                        // currentLine will be null when the StreamReader reaches the end of file
+                        while ((currentLine = sr.ReadLine()) != null)
+                        {
+                            //Console.WriteLine(currentLine);
+                            if (currentLine.Contains(",")) // skip final line in file "End of Report" or any other blank line
+                            {
+                                columnData = Program.SplitRow(currentLine).ToArray();
+                                sSQL = "INSERT INTO etl.inSch_edclossfactor (file_transfer_task_id, date_time_stamp, [day], [hour_ending]," + Environment.NewLine;
+                                sSQL += "[dst], [EDC], [LOSS_DERATION_FACTOR]) VALUES (" + fileTransferTaskID + ", '" + Convert.ToDateTime(columnData[0]).AddHours(Convert.ToInt16(columnData[1])) + "'," + Environment.NewLine;
+                                sSQL = sSQL + GenerateDataSQL(columnData);
+                                try
+                                {
+                                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                    {
+                                        int result = cmd.ExecuteNonQuery();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (ex.Message.Contains("duplicate"))
+                                    {
+                                        //Console.WriteLine("duplicate");
+                                        // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                    }
+                                    else
+                                    { //TODO: update the record in the future.}
+                                        Console.WriteLine("ERROR:" + ex.Message);
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
                 return false;
             }
         }

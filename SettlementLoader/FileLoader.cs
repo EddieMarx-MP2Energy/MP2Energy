@@ -29,8 +29,9 @@ namespace SettlementLoader
                     sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;  // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE')" + Environment.NewLine;  
+                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
+                    //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
@@ -584,7 +585,7 @@ namespace SettlementLoader
                                     }
                                 }
                                 catch (Exception ex)
-                                { 
+                                {
                                     if (ex.Message.Contains("duplicate"))
                                     {
                                         //Console.WriteLine("duplicate");
@@ -686,7 +687,7 @@ namespace SettlementLoader
                 using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
                     connection.Open();
-                    
+
                     dynamic priceTypes = JsonConvert.DeserializeObject(File.ReadAllText(pathName));
 
                     for (int l = 0; l < priceTypes.Count; l++)
@@ -765,7 +766,7 @@ namespace SettlementLoader
                             {
                                 columnData = Program.SplitRow(currentLine).ToArray();
 
-                                for (int i = 0; i < 96; i++)    // TODO:  does not handle ending of daylights savings time 
+                                for (int i = 0; i < 96; i++)    // TODO:  does not handle ending of daylight savings time 
                                 {
                                     sSQL = "INSERT INTO mis.loss_factor (file_transfer_task_id, recorder_name, utility_name, tdsp_code, duns_number," + Environment.NewLine;
                                     sSQL += "loss_code, date_time_stamp, loss_factor_value)" + Environment.NewLine;
@@ -841,6 +842,7 @@ namespace SettlementLoader
                     {
                         string currentLine;
                         string[] columnData;
+                        DateTime tradeDate;
 
                         // rely on null exception if the file is mal-formatted
                         currentLine = sr.ReadLine(); // skip column headers
@@ -849,30 +851,39 @@ namespace SettlementLoader
                         while ((currentLine = sr.ReadLine()) != null)
                         {
                             //Console.WriteLine(currentLine);
-                            if (currentLine.Contains(",")) // skip final line in file "End of Report" or any other blank line
+                            if (currentLine.Contains(",")) // skip any blank line
                             {
                                 columnData = Program.SplitRow(currentLine).ToArray();
-                                sSQL = "INSERT INTO etl.inSch_edclossfactor (file_transfer_task_id, date_time_stamp, [day], [hour_ending]," + Environment.NewLine;
-                                sSQL += "[dst], [EDC], [LOSS_DERATION_FACTOR]) VALUES (" + fileTransferTaskID + ", '" + Convert.ToDateTime(columnData[0]).AddHours(Convert.ToInt16(columnData[1])) + "'," + Environment.NewLine;
-                                sSQL = sSQL + GenerateDataSQL(columnData);
-                                try
+
+                                for (int i = 0; i < 96; i++)    // TODO:  does not handle ending of daylight savings time 
                                 {
-                                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                    sSQL = "INSERT INTO mis.load_profile_ratio (file_transfer_task_id, load_profile_name, " + Environment.NewLine;
+                                    sSQL += "date_time_stamp, ratio_value)" + Environment.NewLine;
+                                    sSQL += "VALUES (" + fileTransferTaskID + ", ";
+                                    sSQL += Program.IsEmptyWithQuotes(columnData[0]) + ",";   // load profile name
+                                    tradeDate = Convert.ToDateTime(columnData[1]);
+                                    sSQL += "'" + tradeDate.AddMinutes((i + 1) * 15) + "',";   // date time stamp
+                                    sSQL += Program.IsEmptyWithQuotes(columnData[i + 2]) + ")" + Environment.NewLine;   // loss factor value
+
+                                    try
                                     {
-                                        int result = cmd.ExecuteNonQuery();
+                                        using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                        {
+                                            int result = cmd.ExecuteNonQuery();
+                                        }
                                     }
-                                }
-                                catch (Exception ex)
-                                {
-                                    if (ex.Message.Contains("duplicate"))
+                                    catch (Exception ex)
                                     {
-                                        //Console.WriteLine("duplicate");
-                                        // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
-                                    }
-                                    else
-                                    { //TODO: update the record in the future.}
-                                        Console.WriteLine("ERROR:" + ex.Message);
-                                        return false;
+                                        if (ex.Message.Contains("duplicate"))
+                                        {
+                                            //Console.WriteLine("duplicate");
+                                            // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                        }
+                                        else
+                                        { //TODO: update the record in the future.}
+                                            Console.WriteLine("ERROR:" + ex.Message);
+                                            return false;
+                                        }
                                     }
                                 }
                             }

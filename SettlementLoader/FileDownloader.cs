@@ -131,6 +131,7 @@ namespace SettlementLoader
                     sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOAD_QUEUED', 'FTTD_RETRY')" + Environment.NewLine;
                     sSQL += "AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
+                    //sSQL += "AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;     // TEMPORARY
                     sSQL += "AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
 
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
@@ -209,7 +210,7 @@ namespace SettlementLoader
                     //sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
                     //sSQL += "where status_cd = 'FTS_DEV'" + Environment.NewLine;    // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE')" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())

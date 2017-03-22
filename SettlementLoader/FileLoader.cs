@@ -31,12 +31,12 @@ namespace SettlementLoader
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
                     //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE')" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
-                    //sSQL += "    AND source_name like '%prde%'"; // TEMPORARY
-                    sSQL += "ORDER BY stop_date, file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
+                    //sSQL += "    AND source_name like '%ercot_esiid_extract%'"; // TEMPORARY
+                    sSQL += "ORDER BY file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())
@@ -77,13 +77,13 @@ namespace SettlementLoader
                                     if (dr["destination_filename"].ToString().Substring(dr["destination_filename"].ToString().Length - 3).ToLower() == "xml")
 
                                     {
-                                        FileLoader fileloader = new FileLoader();
+                                        FileLoader fileloader = new FileLoader();  // load XML instead of CSV
                                         result = fileloader.LoadFileERCOTExtract(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                     }
                                     else
                                     {
                                         result = true;  // skip CSV files.  TODO:  do this better so that "true" is not returned and the file marked as skipped
-                                        Console.WriteLine("skipping CSV file");
+                                        Console.WriteLine("skipping CSV file"); 
                                     }
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_HTTP_ST")
@@ -105,6 +105,11 @@ namespace SettlementLoader
                                 {
                                     FileLoader fileloader = new FileLoader();
                                     result = fileloader.LoadFileMinerLMP(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_HTTP_ESIID")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFileESIID(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
 
                                 if (result)
@@ -227,7 +232,7 @@ namespace SettlementLoader
                                     if (xmlBillDetail.InnerText == "YES") hasActivity = true;   //TODO: check element name also
                                 }
 
-                                sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove extra column separators ","
+                                sqlInsert = sqlInsert.Substring(0, sqlInsert.Length - 1) + ")" + Environment.NewLine;   // remove trailing column separators ","
                                 sqlValues = sqlValues.Substring(0, sqlValues.Length - 1) + ")" + Environment.NewLine;
                                 using (SqlCommand cmdBillDetail = new SqlCommand(sqlInsert + sqlValues + "; SELECT SCOPE_IDENTITY();", connection))
 
@@ -888,6 +893,134 @@ namespace SettlementLoader
                                 }
                             }
                         }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFileERCOTProfiles", sSQL, ex);
+                return false;
+            }
+        }
+        private bool LoadFileESIID(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    // open downloaded file
+                    using (StreamReader sr = new StreamReader(pathName))
+                    {
+                        string currentLine;
+                        string[] columnData;
+                        
+                        // rely on null exception if the file is mal-formatted
+                        
+                        // currentLine will be null when the StreamReader reaches the end of file
+                        while ((currentLine = sr.ReadLine()) != null)
+                        {
+                            //Console.WriteLine(currentLine);
+                            if (currentLine.Contains(",")) // skip any blank line
+                            {
+                                columnData = Program.SplitRow(currentLine).ToArray();
+
+                                sSQL = "INSERT INTO [mis].[TDSP_ESIID] (";
+                                sSQL += "[file_transfer_task_id],";
+                                sSQL += "[ESIID],";
+                                sSQL += "[ADDRESS],";
+                                sSQL += "[ADDRESS_OVERFLOW],";
+                                sSQL += "[CITY],";
+                                sSQL += "[STATE],";
+                                sSQL += "[ZIPCODE],";
+                                sSQL += "[DUNS],";
+                                sSQL += "[METER_READ_CYCLE],";
+                                sSQL += "[STATUS],";
+                                sSQL += "[PREMISE_TYPE],";
+                                sSQL += "[POWER_REGION],";
+                                sSQL += "[STATIONCODE],";
+                                sSQL += "[STATIONNAME],";
+                                sSQL += "[METERED],";
+                                sSQL += "[OPEN_SERVICE_ORDERS],";
+                                sSQL += "[POLR_CUSTOMER_CLASS],";
+                                sSQL += "[SETTLEMENT_AMS_INDICATOR],";
+                                sSQL += "[TDSP_AMS_INDICATOR],";
+                                sSQL += "[SWITCH_HOLD_INDICATOR]) VALUES (" + fileTransferTaskID + ",";
+
+                                for (int i = 0; i < 19; i++)
+                                {
+                                    if (i == 1)
+                                    {// this removes double spaces in ADDRESS column
+                                        sSQL += "replace(replace(replace('" + columnData[i] + "',' ','<>'),'><',''),'<>',' '),";
+                                    }
+                                    else
+                                    {
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[i]) + ",";
+                                    }
+                                }
+                                sSQL = sSQL.Substring(0, sSQL.Length - 1) + ")" + Environment.NewLine;   // remove trailing comma
+
+                                try
+                                {
+                                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                    {
+                                        int result = cmd.ExecuteNonQuery();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (ex.Message.Contains("duplicate"))
+                                    {
+                                        //Console.WriteLine("duplicate");
+                                        sSQL = "UPDATE [mis].[TDSP_ESIID] ";
+                                        sSQL += "SET [ADDRESS] = replace(replace(replace('" + columnData[1] + "', ' ', '<>'), '><', ''), '<>', ' '),";
+                                        sSQL += ",[ADDRESS_OVERFLOW] = " + Program.IsEmptyWithQuotes(columnData[2]);
+                                        sSQL += ",[CITY] = " + Program.IsEmptyWithQuotes(columnData[3]);
+                                        sSQL += ",[STATE] = " + Program.IsEmptyWithQuotes(columnData[4]);
+                                        sSQL += ",[ZIPCODE] = " + Program.IsEmptyWithQuotes(columnData[5]);
+                                        sSQL += ",[DUNS] = " + Program.IsEmptyWithQuotes(columnData[6]);
+                                        sSQL += ",[METER_READ_CYCLE] = " + Program.IsEmptyWithQuotes(columnData[7]);
+                                        sSQL += ",[STATUS] = " + Program.IsEmptyWithQuotes(columnData[8]);
+                                        sSQL += ",[PREMISE_TYPE] = " + Program.IsEmptyWithQuotes(columnData[9]);
+                                        sSQL += ",[POWER_REGION] = " + Program.IsEmptyWithQuotes(columnData[10]);
+                                        sSQL += ",[STATIONCODE] = " + Program.IsEmptyWithQuotes(columnData[11]);
+                                        sSQL += ",[STATIONNAME] = " + Program.IsEmptyWithQuotes(columnData[12]);
+                                        sSQL += ",[METERED] = " + Program.IsEmptyWithQuotes(columnData[13]);
+                                        sSQL += ",[OPEN_SERVICE_ORDERS] = " + Program.IsEmptyWithQuotes(columnData[14]);
+                                        sSQL += ",[POLR_CUSTOMER_CLASS] = " + Program.IsEmptyWithQuotes(columnData[15]);
+                                        sSQL += ",[SETTLEMENT_AMS_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[16]);
+                                        sSQL += ",[TDSP_AMS_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[17]);
+                                        sSQL += ",[SWITCH_HOLD_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[18]);
+                                        sSQL += ",[UPDATE_DATE] = GETDATE()";
+                                        sSQL += " WHERE ESIID = " + Program.IsEmptyWithQuotes(columnData[0]);
+
+                                        try
+                                        {
+                                            using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                            {
+                                                int result = cmd.ExecuteNonQuery();
+                                            }
+                                        }
+                                        catch (Exception ex2)
+                                        {
+                                            Console.WriteLine("ERROR:" + ex2.Message + sSQL);
+                                            return false;
+                                        }
+                                    }
+                                    else
+                                    { //TODO: update the record in the future.}
+                                        Console.WriteLine("ERROR:" + ex.Message + sSQL);
+                                        return false;
+                                    }
+                                }
+                                
+                        }
+                    }
                         return true;
                     }
                 }

@@ -16,6 +16,7 @@ namespace SettlementLoader
         public static void ProcessFiles()
         {
             string sSQL = "";
+            string destinationFilename = "";
 
             // Open database connection
             try
@@ -43,8 +44,9 @@ namespace SettlementLoader
                         {
                             while (dr.Read())
                             {
+                                destinationFilename = dr["destination_filename"].ToString();
                                 Program.UpdateTaskStatus(Convert.ToInt64(dr["file_transfer_task_id"]), loadStatusCode: "FTTL_LOADING");
-
+                                Console.WriteLine("--->" + destinationFilename);
                                 bool result = false;
 
                                 if (dr["transfer_method_cd"].ToString() == "TM_MSRS_HTTP")
@@ -120,6 +122,7 @@ namespace SettlementLoader
                                 {
                                     // TODO:  implement retry logic
                                     Program.UpdateTaskStatus(Convert.ToInt64(dr["file_transfer_task_id"]), loadStatusCode: "FTTL_ERROR");
+                                    Program.LogError(Properties.Settings.Default.TaskName + ":ProcessFiles-->" + destinationFilename, sSQL, new Exception("trapped"));
                                 }
                             }
                         }
@@ -129,7 +132,7 @@ namespace SettlementLoader
             catch (Exception ex)
             {
                 Console.WriteLine("Error:" + ex.Message);
-                Program.LogError(Properties.Settings.Default.TaskName + ":ProcessFiles", sSQL, ex);
+                Program.LogError(Properties.Settings.Default.TaskName + ":ProcessFiles-->" + destinationFilename, sSQL, ex);
             }
         }
         public bool LoadFileERCOTStatement(long fileTransferTaskID, string pathName)
@@ -796,7 +799,7 @@ namespace SettlementLoader
                                     }
 
                                     sSQL += "'" + tradeDate.AddMinutes((i + 1) * 15) + "',";   // date time stamp
-                                    sSQL += "'" + columnData[valueStart + i] + "')" + Environment.NewLine;   // loss factor value
+                                    sSQL += "'" + (columnData[valueStart + i] + 0) + "')" + Environment.NewLine;   // loss factor value
 
                                     try
                                     {
@@ -956,7 +959,7 @@ namespace SettlementLoader
                                 {
                                     if (i == 1)
                                     {// this removes double spaces in ADDRESS column
-                                        sSQL += "replace(replace(replace('" + columnData[i] + "',' ','<>'),'><',''),'<>',' '),";
+                                        sSQL += "replace(replace(replace('" + columnData[i].ToString().Replace("'", "`") + "',' ','<>'),'><',''),'<>',' '),";
                                     }
                                     else
                                     {
@@ -978,7 +981,7 @@ namespace SettlementLoader
                                     {
                                         //Console.WriteLine("duplicate");
                                         sSQL = "UPDATE [mis].[TDSP_ESIID] ";
-                                        sSQL += "SET [ADDRESS] = replace(replace(replace('" + columnData[1] + "', ' ', '<>'), '><', ''), '<>', ' '),";
+                                        sSQL += "SET [ADDRESS] = replace(replace(replace('" + columnData[1].ToString().Replace("'", "`") + "', ' ', '<>'), '><', ''), '<>', ' ')";
                                         sSQL += ",[ADDRESS_OVERFLOW] = " + Program.IsEmptyWithQuotes(columnData[2]);
                                         sSQL += ",[CITY] = " + Program.IsEmptyWithQuotes(columnData[3]);
                                         sSQL += ",[STATE] = " + Program.IsEmptyWithQuotes(columnData[4]);

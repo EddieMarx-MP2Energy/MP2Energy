@@ -183,7 +183,18 @@ namespace SettlementLoader
                             Console.WriteLine("sp_prepare_file_transfer_tasks created " + result + " queue records.");
                             Program.LogSession(Properties.Settings.Default.TaskName + ":ProcessDownloads", "sp_prepare_file_transfer_tasks created " + result + " queue records.", startTime);
                         }
+
+                    if (DateTime.Now.DayOfWeek.ToString() == "Monday")  // on Mondays rerun Month-to-Date.  It's safe to run this multiple times on a Monday because the stored procedure prevents duplicates
+                    {
+                        using (SqlCommand cmd = new SqlCommand("etl.sp_prepare_file_transfer_tasks_month", connection))
+                        {
+                            cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                            int result = cmd.ExecuteNonQuery();
+                            Console.WriteLine("sp_prepare_file_transfer_tasks_month created " + result + " queue records.");
+                            Program.LogSession(Properties.Settings.Default.TaskName + ":ProcessDownloads", "sp_prepare_file_transfer_tasks_month created " + result + " queue records.", startTime);
+                        }
                     }
+                }
             }
             catch (Exception ex)
             {

@@ -177,7 +177,7 @@ namespace SettlementLoader
                         cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
                         cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
                         cmd.Parameters.Add(new SqlParameter("pMessage", exception.Message.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pStackTrace", exception.StackTrace.ToString().Replace("'", "''")));
+                        if (exception.StackTrace != null) cmd.Parameters.Add(new SqlParameter("pStackTrace", exception.StackTrace.ToString().Replace("'", "''")));
                         cmd.Parameters.Add(new SqlParameter("pNumber", 1));
                         cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
                         cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));

@@ -32,7 +32,7 @@ namespace SettlementLoader
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
                     //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_MSRS_PDF_HTTP', 'TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine;
+                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine; //TM_MSRS_PDF_HTTP
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
@@ -57,7 +57,7 @@ namespace SettlementLoader
                                 else if (dr["transfer_method_cd"].ToString() == "TM_MSRS_BILL_HTTP")
                                 {
                                     FileLoader fileloader = new FileLoader();
-                                    result = fileloader.LoadFileMSRSBill(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                    result = fileloader.LoadFileMSRSBill(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString(), dr["source_name"].ToString());
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_INSCHEDULES")
                                 {
@@ -411,7 +411,7 @@ namespace SettlementLoader
             valuesSQL += ")" + Environment.NewLine;
             return valuesSQL;
         }
-        private bool LoadFileMSRSBill(long fileTransferTaskID, string pathName)
+        private bool LoadFileMSRSBill(long fileTransferTaskID, string pathName, string sourceName)
         {
             string sSQL = "";
 
@@ -484,14 +484,26 @@ namespace SettlementLoader
                                 columns = Program.SplitRow(currentLine).ToArray();
                                 if (Program.IsNumeric(columns[0]))  // check for presence of a line item, otherwise a total line or column header row
                                 {
-                                    sSQL = "INSERT INTO etl.msrs_BILLCSVXML_detail (charge_code, adjustment_code, billing_line_item_name, " + Environment.NewLine;
-                                    sSQL += "  source_billing_period_start, amount, msrs_BILLCSVXML_id) VALUES (" + Environment.NewLine;
-                                    sSQL += " '" + columns[0].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // charge code
-                                    sSQL += " " + Program.IsEmptyWithQuotes(columns[1].ToString().Replace("'", "''")) + "," + Environment.NewLine;  // adjustment code
-                                    sSQL += " '" + columns[2].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // billing line item name
-                                    sSQL += " " + Program.IsEmptyWithQuotes(columns[3].ToString()) + "," + Environment.NewLine;  // source billing period start
-                                    sSQL += " " + columns[4] + "," + Environment.NewLine;  // amount
-                                    sSQL += " " + billID + ")" + Environment.NewLine;
+                                    if (sourceName == "WEKBILLCSV_L")
+                                    {
+                                        sSQL = "INSERT INTO etl.msrs_BILLCSVXML_detail (charge_code, billing_line_item_name, " + Environment.NewLine;
+                                        sSQL += "  amount, msrs_BILLCSVXML_id) VALUES (" + Environment.NewLine;
+                                        sSQL += " '" + columns[0].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // charge code
+                                        sSQL += " '" + columns[1].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // billing line item name
+                                        sSQL += " " + columns[2] + "," + Environment.NewLine;  // amount
+                                        sSQL += " " + billID + ")" + Environment.NewLine;
+                                    }
+                                    else
+                                    {
+                                        sSQL = "INSERT INTO etl.msrs_BILLCSVXML_detail (charge_code, adjustment_code, billing_line_item_name, " + Environment.NewLine;
+                                        sSQL += "  source_billing_period_start, amount, msrs_BILLCSVXML_id) VALUES (" + Environment.NewLine;
+                                        sSQL += " '" + columns[0].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // charge code
+                                        sSQL += " " + Program.IsEmptyWithQuotes(columns[1].ToString().Replace("'", "''")) + "," + Environment.NewLine;  // adjustment code
+                                        sSQL += " '" + columns[2].ToString().Replace("'", "''") + "'," + Environment.NewLine;  // billing line item name
+                                        sSQL += " " + Program.IsEmptyWithQuotes(columns[3].ToString()) + "," + Environment.NewLine;  // source billing period start
+                                        sSQL += " " + columns[4] + "," + Environment.NewLine;  // amount
+                                        sSQL += " " + billID + ")" + Environment.NewLine;
+                                    }
 
                                     using (SqlCommand cmd = new SqlCommand(sSQL, connection, tran))
                                     {

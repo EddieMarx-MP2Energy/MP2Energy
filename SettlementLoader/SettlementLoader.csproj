@@ -90,6 +90,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AsyncPump.cs" />
     <Compile Include="FileDownloader.cs" />
     <Compile Include="FileLoader.cs" />
     <Compile Include="Program.cs" />

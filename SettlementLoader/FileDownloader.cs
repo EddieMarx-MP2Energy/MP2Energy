@@ -71,11 +71,16 @@ namespace SettlementLoader
 
                     File.Delete(targetFolder + destinationFilename);
                     var sources = new List<string>() { "monthlybillingstatement", "weeklybillingstatement" };
-                    if ((sources.Contains(sourceName)) && fileSize <= (25 * 1024))
+                    if (sources.Contains(sourceName)) 
                     {
-                        Console.WriteLine("Skipped PJM PDF Statement due to size:" + destinationFilename);
-                        File.Move(targetFolder + tempFilename, targetFolder + destinationFilename + ".delete");
-                        File.Delete(targetFolder + destinationFilename);
+                        if (fileSize <= (25 * 1024))
+                        {
+                            // PJM returns an empty PDF when the dates in the request have no statement that day
+                            Console.WriteLine("Skipped PJM PDF Statement due to size:" + destinationFilename);
+                            //File.Move(targetFolder + tempFilename, targetFolder + destinationFilename + ".delete");
+                            File.Delete(targetFolder + tempFilename);
+                        }
+                        // mark the PDF document as "skipped", because it will not be loaded into the database, just dropped in a folder
                         Program.UpdateTaskStatus(fileTransferTaskID, downloadStatusCode: "FTTD_DOWNLOADED", loadStatusCode: "FTTD_SKIP", sourceFileName: filename, destinationFileName: destinationFilename, fileSize: fileSize);
                     }
                     else

@@ -14,10 +14,10 @@ namespace SettlementLoader
     {
         static void Main(string[] args)
         {
-            DownloadManager.CreateTransferTasksMSRS();
-            DownloadManager.CreateTransferTasksERCOT();
-            DownloadManager.ProcessDownloads();
-            Program.ProcessZipFiles();
+            //DownloadManager.CreateTransferTasksMSRS();
+            //DownloadManager.CreateTransferTasksERCOT();
+            //DownloadManager.ProcessDownloads();
+            //Program.ProcessZipFiles();
             FileLoader.ProcessFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends

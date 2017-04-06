@@ -17,8 +17,8 @@ namespace SettlementLoader
             //DownloadManager.CreateTransferTasksMSRS();
             //DownloadManager.CreateTransferTasksERCOT();
             //DownloadManager.ProcessDownloads();
-            //Program.ProcessZipFiles();
-            FileLoader.ProcessFiles();
+            Program.ProcessZipFiles();
+            //FileLoader.ProcessFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
             Console.Beep(1000,5000);

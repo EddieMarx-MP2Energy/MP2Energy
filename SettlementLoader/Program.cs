@@ -7,6 +7,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SettlementLoader
 {
@@ -16,48 +18,48 @@ namespace SettlementLoader
         {
             //DownloadManager.CreateTransferTasksMSRS();
             //DownloadManager.CreateTransferTasksERCOT();
-            //DownloadManager.ProcessDownloads();
+            DownloadManager.ProcessDownloads();
             Program.ProcessZipFiles();
-            //FileLoader.ProcessFiles();
+            FileLoader.ProcessFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
             Console.Beep(1000,5000);
             System.Media.SystemSounds.Beep.Play();
             //SendAttachmentViaEmail("eddie.marx@mp2energy.com", "Test Subject", "Test Body", "C:\\Users\\eddie.marx\\Documents\\apx\\msrs\\browserless-do-http-get-call-instructions.pdf"); // sample call, random document
-            Console.WriteLine("PRESS ENTER to close window");
+            Console.WriteLine("Press ENTER to close window");
             Console.ReadLine();
         }
 
         public static void UpdateTaskStatus(long fileTransferTaskID, string downloadStatusCode = "", string loadStatusCode = "", string sourceFileName = "", string destinationFileName = "", long fileSize = 0)
         {
-            string sSQL;
+                string sSQL;
 
-            // open the database connection
-            using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
-            {
-                connection.Open();
-
-                // update the etl.file_transfer_task record, only updating the parameters present in the call
-                sSQL = "UPDATE etl.file_transfer_task SET " + Environment.NewLine;
-
-                if (downloadStatusCode != "") sSQL += "download_status_cd = '" + downloadStatusCode + "'," + Environment.NewLine;
-                if (loadStatusCode != "") sSQL += "load_status_cd = '" + loadStatusCode + "'," + Environment.NewLine;
-                if (sourceFileName != "") sSQL += "source_filename = '" + sourceFileName + "'," + Environment.NewLine;
-                if (destinationFileName != "") sSQL += "destination_filename = '" + destinationFileName + "'," + Environment.NewLine;
-                if (fileSize != 0) sSQL += "file_size_bytes = " + fileSize.ToString() + "," + Environment.NewLine;
-
-                sSQL += "machine_name = '" + Environment.MachineName + "'," + Environment.NewLine;
-                sSQL += "update_date = getdate(), update_user = user_name()" + Environment.NewLine;
-                sSQL += "WHERE file_transfer_task_id = " + fileTransferTaskID.ToString();
-
-                using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                // open the database connection
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                 {
-                    cmd.CommandTimeout = 30; // 5 minutes, due to problems with timeout
-                    cmd.CommandType = System.Data.CommandType.Text;
-                    int result = cmd.ExecuteNonQuery();
-                    Console.WriteLine("updated " + result + " file_transfer_task records:" + downloadStatusCode + " " + loadStatusCode);
+                    connection.Open();
+
+                    // update the etl.file_transfer_task record, only updating the parameters present in the call
+                    sSQL = "UPDATE etl.file_transfer_task SET " + Environment.NewLine;
+
+                    if (downloadStatusCode != "") sSQL += "download_status_cd = '" + downloadStatusCode + "'," + Environment.NewLine;
+                    if (loadStatusCode != "") sSQL += "load_status_cd = '" + loadStatusCode + "'," + Environment.NewLine;
+                    if (sourceFileName != "") sSQL += "source_filename = '" + sourceFileName + "'," + Environment.NewLine;
+                    if (destinationFileName != "") sSQL += "destination_filename = '" + destinationFileName + "'," + Environment.NewLine;
+                    if (fileSize != 0) sSQL += "file_size_bytes = " + fileSize.ToString() + "," + Environment.NewLine;
+
+                    sSQL += "machine_name = '" + Environment.MachineName + "'," + Environment.NewLine;
+                    sSQL += "update_date = getdate(), update_user = user_name()" + Environment.NewLine;
+                    sSQL += "WHERE file_transfer_task_id = " + fileTransferTaskID.ToString();
+
+                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                    {
+                        cmd.CommandTimeout = 30; // 5 minutes, due to problems with timeout
+                        cmd.CommandType = System.Data.CommandType.Text;
+                        int result = cmd.ExecuteNonQuery();
+                        Console.WriteLine("updated " + result + " file_transfer_task records:" + downloadStatusCode + " " + loadStatusCode);
+                    }
                 }
-            }
         }
         public static bool IsNumeric(object Expression)
         {
@@ -138,59 +140,65 @@ namespace SettlementLoader
                 }
             }
         }
-        public static void LogSession(string taskName, string taskDetail, DateTime startTime)
+        public static async Task LogSession(string taskName, string taskDetail, DateTime startTime)
         {
-            try
+            await Task.Run(() =>
             {
-                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                try
                 {
-                    connection.Open();
-
-                    using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Session]", connection))
+                    using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                     {
-                        cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                        cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
-                        cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pStart", startTime));
-                        cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));
-                        cmd.ExecuteNonQuery();
+                        connection.Open();
+
+                        using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Session]", connection))
+                        {
+                            cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                            cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
+                            cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pStart", startTime));
+                            cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));
+                            cmd.ExecuteNonQuery();
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error attempting to call sp_Session:" + ex.Message);
-            }
-        }
-        public static void LogError(string taskName, string taskDetail, System.Exception exception)
-        {
-            try
-            {
-                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                catch (Exception ex)
                 {
-                    connection.Open();
-
-                    using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Error_PUT]", connection))
+                    Console.WriteLine("Error attempting to call sp_Session:" + ex.Message);
+                }
+            });
+            }
+        public static async Task LogError(string taskName, string taskDetail, System.Exception exception)
+        {
+            await Task.Run(() =>
+            {
+                try
+                {
+                    using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
                     {
-                        cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                        cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
-                        cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pMessage", exception.Message.Replace("'", "''")));
-                        if (exception.StackTrace != null) cmd.Parameters.Add(new SqlParameter("pStackTrace", exception.StackTrace.ToString().Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pNumber", 1));
-                        cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));
-                        cmd.Parameters.Add(new SqlParameter("pShownToUser", 0));
-                        cmd.Parameters.Add(new SqlParameter("pUpdateTS", null));
-                        cmd.ExecuteNonQuery();
+                        connection.Open();
+
+                        using (SqlCommand cmd = new SqlCommand("[ESG].[Trace].[sp_Error_PUT]", connection))
+                        {
+                            cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                            cmd.Parameters.Add(new SqlParameter("pApplicationID", Properties.Settings.Default.ApplicationID));
+                            cmd.Parameters.Add(new SqlParameter("pTaskName", taskName.Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pMessage", exception.Message.Replace("'", "''")));
+                            if (exception.StackTrace != null) cmd.Parameters.Add(new SqlParameter("pStackTrace", exception.StackTrace.ToString().Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pNumber", 1));
+                            cmd.Parameters.Add(new SqlParameter("pTaskDetail", taskDetail.Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pUpdater", Environment.UserName.Replace("'", "''")));
+                            cmd.Parameters.Add(new SqlParameter("pShownToUser", 0));
+                            cmd.Parameters.Add(new SqlParameter("pUpdateTS", null));
+                            cmd.ExecuteNonQuery();
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error attempting to call sp_Error_PUT:" + ex.Message + ", logging exception:" + exception.Message);
-            }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error attempting to call sp_Error_PUT:" + ex.Message + ", logging exception:" + exception.Message);
+                }
+            });
         }
         public static string IsEmptyWithQuotes(string inString)
         {
@@ -202,7 +210,7 @@ namespace SettlementLoader
                 return "'" + inString.Replace("'", "''") + "'";
             }
         }
-        public static List<FileList> UnzipFile(string zipPath, string extractPath, string sourceName, long fileTransferTaskID)
+        public static  List<FileList> UnzipFile(string zipPath, string extractPath, string sourceName, long fileTransferTaskID)
         {
             List<FileList> fileList = new List<FileList>();
 
@@ -212,14 +220,16 @@ namespace SettlementLoader
                 {
                     File.Delete((Path.Combine(extractPath, entry.FullName)));
                     File.Delete(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
-                    entry.ExtractToFile(Path.Combine(extractPath, entry.FullName));
-                    File.Move(Path.Combine(extractPath, entry.FullName), Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
+                    Task.Run(() => entry.ExtractToFile(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)));
+                    //entry.ExtractToFile(Path.Combine(extractPath, entry.FullName));
+                    //File.Move(Path.Combine(extractPath, entry.FullName), Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
 
                     FileList i = new FileList();
                     i.origFileName = entry.FullName;
                     i.filePath = extractPath;
                     i.fileName = sourceName + "_" + fileTransferTaskID + "_" + entry.FullName;
-                    i.fileSize = new System.IO.FileInfo(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)).Length;
+                    //i.fileSize = new System.IO.FileInfo(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)).Length;
+                    i.fileSize = entry.Length;
                     fileList.Add(i);
                 }
             }

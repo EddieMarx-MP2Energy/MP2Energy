@@ -32,12 +32,12 @@ namespace SettlementLoader
                     sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
                     sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
                     //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine; //TM_MSRS_PDF_HTTP
+                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID', 'TM_ERCOT_MIS_867_03_ACTIVITY')" + Environment.NewLine; //TM_MSRS_PDF_HTTP
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
-                    //sSQL += "    AND source_name like '%ercot_esiid_extract%'"; // TEMPORARY
-                    sSQL += "ORDER BY file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
+                    sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
+                    sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())
@@ -63,6 +63,16 @@ namespace SettlementLoader
                                 {
                                     FileLoader fileloader = new FileLoader();
                                     result = fileloader.LoadFileInSchedulesLosses(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_SCR727")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFileSCR727(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
+                                }
+                                else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_MIS_867_03_ACTIVITY")
+                                {
+                                    FileLoader fileloader = new FileLoader();
+                                    result = fileloader.LoadFile867_03Activity(Convert.ToInt64(dr["file_transfer_task_id"]), dr["destination_address"].ToString() + dr["destination_filename"].ToString());
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_ERCOT_HTTP_LOSS")
                                 {
@@ -1047,20 +1057,181 @@ namespace SettlementLoader
                 return false;
             }
         }
-        ////public async Task<int> GetValue()
-        ////{
-        ////    // Asynchronously retrieve two partial values.
-        ////    // Note that these are *not* awaited at this time.
-        ////    Task<int> part1 = GetValuePart1();
-        ////    Task<int> part2 = GetValuePart2();
+        private bool LoadFileSCR727(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
 
-        ////    // Wait for both values to arrive.
-        ////    await TaskEx.WhenAll(part1, part2);
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
 
-        ////    // Calculate our result.
-        ////    int value1 = await part1; // Does not actually wait.
-        ////    int value2 = await part2; // Does not actually wait.
-        ////    return value1 + value2;
-        ////}
+                    // open downloaded file
+                    using (StreamReader sr = new StreamReader(pathName))
+                    {
+                        string currentLine;
+                        string[] columnData;
+
+                        // rely on null exception if the file is mal-formatted
+
+                        // currentLine will be null when the StreamReader reaches the end of file
+                        while ((currentLine = sr.ReadLine()) != null)
+                        {
+                            //Console.WriteLine(currentLine);
+                            if (currentLine.Contains(",")) // skip any blank line
+                            {
+                                columnData = Program.SplitRow(currentLine).ToArray();
+
+                                sSQL = "INSERT INTO [mis].[TDSP_ESIID] (";
+                                //) VALUES (" + fileTransferTaskID + ",";
+
+                                for (int i = 0; i < 19; i++)
+                                {
+                                    if (i == 1)
+                                    {// this removes double spaces in ADDRESS column
+                                        sSQL += "replace(replace(replace('" + columnData[i].ToString().Replace("'", "`") + "',' ','<>'),'><',''),'<>',' '),";
+                                    }
+                                    else
+                                    {
+                                        sSQL += Program.IsEmptyWithQuotes(columnData[i]) + ",";
+                                    }
+                                }
+                                sSQL = sSQL.Substring(0, sSQL.Length - 1) + ")" + Environment.NewLine;   // remove trailing comma
+
+                                try
+                                {
+                                    using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                    {
+                                        int result = cmd.ExecuteNonQuery();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (ex.Message.Contains("duplicate"))
+                                    {
+                                        //Console.WriteLine("duplicate");
+                                        sSQL = "UPDATE [mis].[TDSP_ESIID] ";
+                                        sSQL += "SET [ADDRESS] = replace(replace(replace('" + columnData[1].ToString().Replace("'", "`") + "', ' ', '<>'), '><', ''), '<>', ' ')";
+                                        sSQL += ",[ADDRESS_OVERFLOW] = " + Program.IsEmptyWithQuotes(columnData[2]);
+                                        sSQL += ",[CITY] = " + Program.IsEmptyWithQuotes(columnData[3]);
+                                        sSQL += ",[STATE] = " + Program.IsEmptyWithQuotes(columnData[4]);
+                                        sSQL += ",[ZIPCODE] = " + Program.IsEmptyWithQuotes(columnData[5]);
+                                        sSQL += ",[DUNS] = " + Program.IsEmptyWithQuotes(columnData[6]);
+                                        sSQL += ",[METER_READ_CYCLE] = " + Program.IsEmptyWithQuotes(columnData[7]);
+                                        sSQL += ",[STATUS] = " + Program.IsEmptyWithQuotes(columnData[8]);
+                                        sSQL += ",[PREMISE_TYPE] = " + Program.IsEmptyWithQuotes(columnData[9]);
+                                        sSQL += ",[POWER_REGION] = " + Program.IsEmptyWithQuotes(columnData[10]);
+                                        sSQL += ",[STATIONCODE] = " + Program.IsEmptyWithQuotes(columnData[11]);
+                                        sSQL += ",[STATIONNAME] = " + Program.IsEmptyWithQuotes(columnData[12]);
+                                        sSQL += ",[METERED] = " + Program.IsEmptyWithQuotes(columnData[13]);
+                                        sSQL += ",[OPEN_SERVICE_ORDERS] = " + Program.IsEmptyWithQuotes(columnData[14]);
+                                        sSQL += ",[POLR_CUSTOMER_CLASS] = " + Program.IsEmptyWithQuotes(columnData[15]);
+                                        sSQL += ",[SETTLEMENT_AMS_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[16]);
+                                        sSQL += ",[TDSP_AMS_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[17]);
+                                        sSQL += ",[SWITCH_HOLD_INDICATOR] = " + Program.IsEmptyWithQuotes(columnData[18]);
+                                        sSQL += ",[UPDATE_DATE] = GETDATE()";
+                                        sSQL += " WHERE ESIID = " + Program.IsEmptyWithQuotes(columnData[0]);
+
+                                        try
+                                        {
+                                            using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                            {
+                                                int result = cmd.ExecuteNonQuery();
+                                            }
+                                        }
+                                        catch (Exception ex2)
+                                        {
+                                            Console.WriteLine("ERROR:" + ex2.Message + sSQL);
+                                            return false;
+                                        }
+                                    }
+                                    else
+                                    { //TODO: update the record in the future.}
+                                        Console.WriteLine("ERROR:" + ex.Message + sSQL);
+                                        return false;
+                                    }
+                                }
+
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                return false;
+            }
+        }
+        private bool LoadFile867_03Activity(long fileTransferTaskID, string pathName)
+        {
+            string sSQL = "";
+
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    // open downloaded file
+                    using (StreamReader sr = new StreamReader(pathName))
+                    {
+                        string currentLine;
+                        string[] columnData;
+
+                        // rely on null exception if the file is mal-formatted
+
+                        // currentLine will be null when the StreamReader reaches the end of file
+                        while ((currentLine = sr.ReadLine()) != null)
+                        {
+                            //Console.WriteLine(currentLine);
+                            if (currentLine.Contains(",")) // skip any blank line
+                            {
+                                columnData = Program.SplitRow(currentLine).ToArray();
+
+                                sSQL = "INSERT INTO [mis].[867_03_ACTIVITY]";
+                                sSQL += " (file_transfer_task_id";
+                                sSQL += " ,[READ_TYPE_CD]";
+                                sSQL += " ,[ESIID]";
+                                sSQL += " ,[GLOBALPROCESSINGID]";
+                                sSQL += " ,[MREERRCODE]";
+                                sSQL += " ,[MREERRDESC]";
+                                sSQL += " ,[METERTYPE]";
+                                sSQL += " ,[TRANSSTARTDATE]";
+                                sSQL += " ,[TRANSSTOPDATE]";
+                                sSQL += " ,[DATE1]";
+                                sSQL += " ,[DATE2]";
+                                sSQL += " ,[DATA1]";
+                                sSQL += " ,[DATA2]";
+                                sSQL += " ,[ADDTIME])";
+                                sSQL += " VALUES(" + fileTransferTaskID + ", ";
+                                sSQL += pathName.Contains("NIDR") ? "'NIDR'," : "'IDR',";
+
+                                for (int i = 0; i < 12; i++)
+                                {
+                                    sSQL += Program.IsEmptyWithQuotes(columnData[i]) + ",";
+                                }
+                                sSQL = sSQL.Substring(0, sSQL.Length - 1) + ")" + Environment.NewLine;   // remove trailing comma
+                                
+                                using (SqlCommand cmd = new SqlCommand(sSQL, connection))
+                                {
+                                    int result = cmd.ExecuteNonQuery();
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error:" + ex.Message);
+                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFile", sSQL, ex);
+                return false;
+            }
+        }
     }
 }

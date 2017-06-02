@@ -17,7 +17,7 @@ namespace SettlementLoader
         static void Main(string[] args)
         {
             //DownloadManager.CreateTransferTasksMSRS();
-            //DownloadManager.CreateTransferTasksERCOT();
+            DownloadManager.CreateTransferTasksERCOT();
             DownloadManager.ProcessDownloads();
             Program.ProcessZipFiles();
             FileLoader.ProcessFiles();
@@ -210,7 +210,7 @@ namespace SettlementLoader
                 return "'" + inString.Replace("'", "''") + "'";
             }
         }
-        public static  List<FileList> UnzipFile(string zipPath, string extractPath, string sourceName, long fileTransferTaskID)
+        public static List<FileList> UnzipFile(string zipPath, string extractPath, string sourceName, long fileTransferTaskID)
         {
             List<FileList> fileList = new List<FileList>();
 
@@ -220,7 +220,8 @@ namespace SettlementLoader
                 {
                     File.Delete((Path.Combine(extractPath, entry.FullName)));
                     File.Delete(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
-                    Task.Run(() => entry.ExtractToFile(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)));
+                    //Task.Run(() => entry.ExtractToFile(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName)));
+                    entry.ExtractToFile(Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
                     //entry.ExtractToFile(Path.Combine(extractPath, entry.FullName));
                     //File.Move(Path.Combine(extractPath, entry.FullName), Path.Combine(extractPath, sourceName + "_" + fileTransferTaskID + "_" + entry.FullName));
 

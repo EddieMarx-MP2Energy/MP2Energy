@@ -36,7 +36,7 @@ namespace SettlementLoader
                     sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
                     sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
                     sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
-                    sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
+                    //sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
                     sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {

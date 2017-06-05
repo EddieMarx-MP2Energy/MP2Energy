@@ -226,7 +226,7 @@ namespace SettlementLoader
                     sSQL += "from etl.file_transfer_source" + Environment.NewLine;
                     //sSQL += "with (nolock)" + Environment.NewLine;
                     sSQL += "where status_cd = 'FTS_READY'" + Environment.NewLine;
-                    sSQL += " and file_transfer_source.file_transfer_source_id > 875"; // TEMPORARY
+                    //sSQL += " and file_transfer_source.file_transfer_source_id > 875"; // TEMPORARY
                     //sSQL += "where status_cd = 'FTS_DEV'" + Environment.NewLine;    // TEMPORARY
                     sSQL += "    AND transfer_method_cd IN ('TM_ERCOT_MIS_SCR727', 'TM_ERCOT_MIS_867_03_ACTIVITY', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID')" + Environment.NewLine;
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))

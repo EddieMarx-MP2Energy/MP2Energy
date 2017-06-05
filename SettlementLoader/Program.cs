@@ -16,7 +16,7 @@ namespace SettlementLoader
     {
         static void Main(string[] args)
         {
-            //DownloadManager.CreateTransferTasksMSRS();
+            DownloadManager.CreateTransferTasksMSRS();
             DownloadManager.CreateTransferTasksERCOT();
             DownloadManager.ProcessDownloads();
             Program.ProcessZipFiles();

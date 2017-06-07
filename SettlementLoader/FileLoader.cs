@@ -13,9 +13,55 @@ namespace SettlementLoader
 {
     class FileLoader
     {
-        public static void ProcessFiles()
+        public static string GetQueryFileType(string fileNameFilter, string transferMethod)
         {
-            string sSQL = "";
+            string sSQL;
+
+            sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
+            sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+            sSQL += "with (nolock)" + Environment.NewLine;
+            sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
+            sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
+            sSQL += "    AND transfer_method_cd = '" + transferMethod + "'" + Environment.NewLine;
+            sSQL += "    AND source_filename LIKE '%" + fileNameFilter + "%'" + Environment.NewLine;
+            sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
+            sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
+            sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
+            sSQL += "ORDER BY file_transfer_task.insert_date" + Environment.NewLine;
+
+            return sSQL;
+        }
+        public static void ProcessSpecificFiles()
+        {
+            string sSQL;
+
+            // the processing order of these files is important
+            ProcessFiles(GetQueryFileType("-ESIID-", "TM_ERCOT_MIS_SCR727"));
+            ProcessFiles(GetQueryFileType("-ESIIDSERVICEHIST_DELETE-", "TM_ERCOT_MIS_SCR727"));
+            ProcessFiles(GetQueryFileType("-ESIIDUSAGE_DELETE-", "TM_ERCOT_MIS_SCR727"));
+            ProcessFiles(GetQueryFileType("-ESIIDSERVICEHIST-", "TM_ERCOT_MIS_SCR727"));
+            ProcessFiles(GetQueryFileType("-ESIIDUSAGE-", "TM_ERCOT_MIS_SCR727"));
+
+            // process all remaining downloaded files that are ready for load
+            // make sure that the transferMethod above is not in this query below
+            sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
+            sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
+            sSQL += "with (nolock)" + Environment.NewLine;
+            sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
+            sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
+            //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
+            sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID', 'TM_ERCOT_MIS_867_03_ACTIVITY')" + Environment.NewLine; //TM_MSRS_PDF_HTTP
+            //sSQL += " AND transfer_method_cd = 'TM_JSON_LMP'" + Environment.NewLine;    // TEMPORARY
+            sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
+            sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
+            sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
+            //sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
+            sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
+            ProcessFiles(sSQL);
+
+        }
+        public static void ProcessFiles(string sSQL)
+        {
             string destinationFilename = "";
 
             // Open database connection
@@ -25,21 +71,6 @@ namespace SettlementLoader
                 {
                     connection.Open();
 
-                    // Process downloaded files ready for load
-                    sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
-                    sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
-                    sSQL += "with (nolock)" + Environment.NewLine;
-                    sSQL += "WHERE download_status_cd IN ('FTTD_DOWNLOADED')" + Environment.NewLine;
-                    sSQL += "    AND file_transfer_source.status_cd = 'FTS_READY'" + Environment.NewLine;
-                    //sSQL += "    AND file_transfer_source.status_cd = 'FTS_DEV'" + Environment.NewLine;   // TEMPORARY
-                    sSQL += "    AND transfer_method_cd IN ('TM_JSON_LMP', 'TM_MSRS_HTTP', 'TM_MSRS_BILL_HTTP', 'TM_INSCHEDULES', 'TM_ERCOT_MIS_HTTP', 'TM_ERCOT_MIS_HTTP_ST', 'TM_ERCOT_HTTP_LOSS', 'TM_ERCOT_HTTP_PROFILE', 'TM_ERCOT_HTTP_ESIID', 'TM_ERCOT_MIS_867_03_ACTIVITY', 'TM_ERCOT_MIS_SCR727')" + Environment.NewLine; //TM_MSRS_PDF_HTTP
-                    sSQL += " and transfer_method_cd = 'TM_ERCOT_MIS_SCR727'";  // TEMPORARY
-                    //sSQL += " AND transfer_method_cd = 'TM_JSON_LMP'" + Environment.NewLine;    // TEMPORARY
-                    sSQL += "    AND file_transfer_source.file_transfer_source_id = file_transfer_task.file_transfer_source_id" + Environment.NewLine;
-                    sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
-                    sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
-                    //sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
-                    sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
                         using (SqlDataReader dr = cmd.ExecuteReader())
@@ -1250,7 +1281,7 @@ namespace SettlementLoader
                                 sSQL = Program.IsEmptyWithQuotes(fileTransferTaskID.ToString()) + ",";
                                 // Console.WriteLine(columnData.Count());
 
-                                for (int i = 0; i < columnData.Count() -1; i++)
+                                for (int i = 0; i < columnData.Count(); i++)
                                 {
                                     sSQL += Program.IsEmptyWithQuotes(columnData[i]) + ",";
                                 }
@@ -1258,9 +1289,37 @@ namespace SettlementLoader
 
                                 using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                                 {
-                                    int result = cmd.ExecuteNonQuery();
+                                    try
+                                    {
+                                        int result = cmd.ExecuteNonQuery();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        if (ex.Message.Contains("duplicate"))
+                                        {
+                                            //Console.WriteLine("duplicate");
+                                            // only one statement per file
+                                            // do nothing on unique constraint violations.  TODO:  replace with MERGE statement
+                                            // return true;
+                                        }
+                                        else
+                                        {
+                                            if (ex.Message.Contains("conflicted"))
+                                            {
+                                                Console.WriteLine("Error:" + ex.Message);
+                                                return false;
+                                            }
+                                            else
+                                            {
+                                                Console.WriteLine("Error:" + ex.Message);
+                                                Program.LogError(Properties.Settings.Default.TaskName + ":LoadFileSCR727", sInsert + sSQL, ex);
+                                                return false;
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                            
                         }
                         return true;
                     }

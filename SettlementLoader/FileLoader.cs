@@ -33,17 +33,64 @@ namespace SettlementLoader
         }
         public static void ProcessSpecificFiles()
         {
-            string sSQL;
 
             // the processing order of these files is important
+            // ercot sends delete records that remove data from these tables before loading new data that may replace the data deleted
             ProcessFiles(GetQueryFileType("-ESIID-", "TM_ERCOT_MIS_SCR727"));
             ProcessFiles(GetQueryFileType("-ESIIDSERVICEHIST_DELETE-", "TM_ERCOT_MIS_SCR727"));
+            SCR727DeleteServiceHistory();
             ProcessFiles(GetQueryFileType("-ESIIDUSAGE_DELETE-", "TM_ERCOT_MIS_SCR727"));
+            SCR727DeleteUsage();
             ProcessFiles(GetQueryFileType("-ESIIDSERVICEHIST-", "TM_ERCOT_MIS_SCR727"));
             ProcessFiles(GetQueryFileType("-ESIIDUSAGE-", "TM_ERCOT_MIS_SCR727"));
 
+        }
+        public static void SCR727DeleteServiceHistory()
+        {
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    using (SqlCommand cmd = new SqlCommand("[Settlement].[dbo].[sp_scr727_delete_servicehist]", connection))
+                    {
+                        cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error attempting to call sp_scr727_delete_servicehist:" + ex.Message);
+            }
+        }
+        public static void SCR727DeleteUsage()
+        {
+            try
+            {
+                using (SqlConnection connection = new SqlConnection(Properties.Settings.Default.DatabaseConnectionString))
+                {
+                    connection.Open();
+
+                    using (SqlCommand cmd = new SqlCommand("[Settlement].[dbo].[sp_scr727_delete_usage]", connection))
+                    {
+                        cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error attempting to call sp_scr727_delete_usage:" + ex.Message);
+            }
+        }
+        public static void ProcessRemainingFiles()
+        {
+            string sSQL;
+
             // process all remaining downloaded files that are ready for load
-            // make sure that the transferMethod above is not in this query below
+            // make sure that any transferMethods present in ProcessSpecificFiles() is not in this query below
             sSQL = "SELECT file_transfer_task_id, file_transfer_task.destination_address, destination_filename, source_name, transfer_method_cd" + Environment.NewLine;
             sSQL += "FROM etl.file_transfer_task, etl.file_transfer_source" + Environment.NewLine;
             sSQL += "with (nolock)" + Environment.NewLine;
@@ -58,7 +105,6 @@ namespace SettlementLoader
             //sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
             sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
             ProcessFiles(sSQL);
-
         }
         public static void ProcessFiles(string sSQL)
         {

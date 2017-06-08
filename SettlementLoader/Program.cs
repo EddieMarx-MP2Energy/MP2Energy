@@ -21,6 +21,7 @@ namespace SettlementLoader
             DownloadManager.ProcessDownloads();
             Program.ProcessZipFiles();
             FileLoader.ProcessSpecificFiles();
+            FileLoader.ProcessRemainingFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
             Console.Beep(1000,5000);
@@ -167,7 +168,7 @@ namespace SettlementLoader
                     Console.WriteLine("Error attempting to call sp_Session:" + ex.Message);
                 }
             });
-            }
+        }
         public static async Task LogError(string taskName, string taskDetail, System.Exception exception)
         {
             await Task.Run(() =>

@@ -31,8 +31,10 @@ namespace SettlementLoader
             Console.ReadLine();
         }
 
-        public static void UpdateTaskStatus(long fileTransferTaskID, string downloadStatusCode = "", string loadStatusCode = "", string sourceFileName = "", string destinationFileName = "", long fileSize = 0)
+        public static Task UpdateTaskStatus(long fileTransferTaskID, string downloadStatusCode = "", string loadStatusCode = "", string sourceFileName = "", string destinationFileName = "", long fileSize = 0)
         {
+            return Task.Run(() =>
+            {
                 string sSQL;
 
                 // open the database connection
@@ -55,12 +57,13 @@ namespace SettlementLoader
 
                     using (SqlCommand cmd = new SqlCommand(sSQL, connection))
                     {
-                        cmd.CommandTimeout = 30; // 5 minutes, due to problems with timeout
+                        cmd.CommandTimeout = 120;
                         cmd.CommandType = System.Data.CommandType.Text;
                         int result = cmd.ExecuteNonQuery();
                         Console.WriteLine("updated " + result + " file_transfer_task records:" + downloadStatusCode + " " + loadStatusCode);
                     }
                 }
+            });
         }
         public static bool IsNumeric(object Expression)
         {
@@ -141,9 +144,9 @@ namespace SettlementLoader
                 }
             }
         }
-        public static async Task LogSession(string taskName, string taskDetail, DateTime startTime)
+        public static Task LogSession(string taskName, string taskDetail, DateTime startTime)
         {
-            await Task.Run(() =>
+            return Task.Run(() =>
             {
                 try
                 {
@@ -169,9 +172,9 @@ namespace SettlementLoader
                 }
             });
         }
-        public static async Task LogError(string taskName, string taskDetail, System.Exception exception)
+        public static Task LogError(string taskName, string taskDetail, System.Exception exception)
         {
-            await Task.Run(() =>
+            return Task.Run(() =>
             {
                 try
                 {

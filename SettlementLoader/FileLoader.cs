@@ -103,7 +103,7 @@ namespace SettlementLoader
             sSQL += "    AND (load_status_cd IS NULL" + Environment.NewLine;
             sSQL += "        OR load_status_cd IN ('FTTL_READY', 'FTTL_RETRY', 'FTTL_STATUS_NEW'))" + Environment.NewLine;
             //sSQL += "    AND source_name like '%ercot_idr_activity%'"; // TEMPORARY
-            sSQL += "ORDER BY file_transfer_task.source_filename DESC" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
+            sSQL += "ORDER BY file_transfer_task.source_filename" + Environment.NewLine;  // must load HEADERS before INTERVAL/STATUS, just happens to be in alphabetical order
             ProcessFiles(sSQL);
         }
         public static void ProcessFiles(string sSQL)
@@ -188,8 +188,7 @@ namespace SettlementLoader
                                     else
                                     {
                                         result = true;  // skip CSV files.  TODO:  do this better so that "true" is not returned and the file marked as skipped
-                                        Console.WriteLine
-                                            ("skipping statement CSV file");
+                                        Console.WriteLine("skipping statement CSV file");
                                     }
                                 }
                                 else if (dr["transfer_method_cd"].ToString() == "TM_JSON_LMP")

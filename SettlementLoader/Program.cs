@@ -24,11 +24,11 @@ namespace SettlementLoader
             FileLoader.ProcessRemainingFiles();
 
             // pause for ENTER key to prevent error messages from clearing after program ends
-            Console.Beep(1000,5000);
-            System.Media.SystemSounds.Beep.Play();
+            //Console.Beep(1000,5000);
+            //System.Media.SystemSounds.Beep.Play();
             //SendAttachmentViaEmail("eddie.marx@mp2energy.com", "Test Subject", "Test Body", "C:\\Users\\eddie.marx\\Documents\\apx\\msrs\\browserless-do-http-get-call-instructions.pdf"); // sample call, random document
-            Console.WriteLine("Press ENTER to close window");
-            Console.ReadLine();
+            //Console.WriteLine("Press ENTER to close window");
+            //Console.ReadLine();
         }
 
         public static Task UpdateTaskStatus(long fileTransferTaskID, string downloadStatusCode = "", string loadStatusCode = "", string sourceFileName = "", string destinationFileName = "", long fileSize = 0)
